@@ -5,9 +5,24 @@ from discord.ext import commands
 PONTOS_POR_CONTEUDO = {
     "DG": 20,
     "AVALON": 30,
-    "ARANHA": 50,
+    "COMUNIATARIO-BAIXO-RISCO": 75,
+    "COMUNIATARIO-ALTO-RISCO": 100,
+    "ARANHA DE CRISTAL": 25,
+    "CAMPEONATO": 50,
+    "DOACAO": 100,
     # você pode adicionar mais tipos depois
 }
+   # Mapear ícones para cada tipo de conteúdo
+icones = {
+    "DG": "⚔️",
+    "AVALON": "🏰",
+    "COMUNIATARIO-BAIXO-RISCO": "🛡️",
+    "COMUNIATARIO-ALTO-RISCO": "⚠️",
+    "ARANHA DE CRISTAL": "🕷️💎",
+    "CAMPEONATO": "🏆",
+    "DOACAO": "💰"
+}
+    
 
 # Guardará temporariamente os dados antes de finalizar
 conteudo_em_aberto = None
@@ -18,10 +33,42 @@ intents.message_content = True # Habilita o acesso ao conteúdo das mensagens
 
 # Criação do bot
 bot = commands.Bot(command_prefix='!', intents=intents)
-
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado como {bot.user}')
+
+@bot.command()
+async def Pontuacao(ctx):
+    # Criar um embed para uma tabela bonita
+    embed = discord.Embed(
+        title="📊 TABELA DE PONTOS - Paladinos Sagrados",
+        description="Sistema de pontuação por conteúdo",
+        color=0x00ff00  # Verde
+    )
+    
+    # Criar cabeçalhos da tabela
+    embed.add_field(name="📋 **CONTEÚDO**", value="━━━━━━━━━━━━━━━━━━━━━━━━━", inline=True)
+    embed.add_field(name="🎯 **PONTOS**", value="━━━━━━━━━━━━━━━━━━━━━━━━━", inline=True)
+    embed.add_field(name="\u200b", value="\u200b", inline=True)  # Campo vazio para quebra de linha
+    
+    # Adicionar cada linha da tabela
+    for tipo, pontos in PONTOS_POR_CONTEUDO.items():
+        icone = icones.get(tipo, "📋")
+        nome_formatado = f"{icone} {tipo.replace('-', ' ').title()}"
+        
+        # Coluna 1: Nome do conteúdo
+        embed.add_field(name="\u200b", value=nome_formatado, inline=True)
+        
+        # Coluna 2: Pontos em verde
+        embed.add_field(name="\u200b", value=f"```ansi\n\u001b[36m{pontos} pts\u001b[0m\n```", inline=True)
+        
+        # Coluna 3: Espaço vazio para quebrar linha
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+    
+    # Adicionar informações extras
+    embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
+    
+    await ctx.send(embed=embed) 
 
 @bot.command()
 async def conteudo(ctx, caller, tipo, *integrantes):
