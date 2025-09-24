@@ -18,7 +18,7 @@ icones = {
     "AVALON": "🏰",
     "COMUNIATARIO-BAIXO-RISCO": "🛡️",
     "COMUNIATARIO-ALTO-RISCO": "⚠️",
-    "ARANHA DE CRISTAL": "🕷️💎",
+    "ARANHA DE CRISTAL": "💎",
     "CAMPEONATO": "🏆",
     "DOACAO": "💰"
 }
@@ -76,7 +76,18 @@ async def conteudo(ctx, caller, tipo, *integrantes):
 
     tipo = tipo.upper()
     if tipo not in PONTOS_POR_CONTEUDO:
-        await ctx.send(f"❌ Tipo de conteúdo inválido: `{tipo}`")
+        # Embed para erro
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Tipo de conteúdo inválido: `{tipo}`",
+            color=0xff0000  # Vermelho
+        )
+        embed_erro.add_field(
+            name="💡 Tipos válidos:",
+            value=", ".join([f"`{t}`" for t in PONTOS_POR_CONTEUDO.keys()]),
+            inline=False
+        )
+        await ctx.send(embed=embed_erro)
         return
 
     pontos = PONTOS_POR_CONTEUDO[tipo]
@@ -90,8 +101,36 @@ async def conteudo(ctx, caller, tipo, *integrantes):
         "membros": membros,
     }
 
-    tabela = "\n".join([f"- {m}: {pontos} pts" for m in membros])
-    await ctx.send(f"📊 **Prévia de Pontuação - {tipo}**\n{tabela}\n\nUse `!finalizar` para salvar.")
+    # Criar embed para prévia
+    icone = icones.get(tipo, "📋")
+    embed = discord.Embed(
+        title=f"📊 PRÉVIA DE PONTUAÇÃO",
+        description=f"{icone} **{tipo.replace('-', ' ').title()}** - {pontos} pts por pessoa",
+        color=0xffa500  # Laranja para prévia
+    )
+
+    participantes_lista = []
+    for i, membro in enumerate(membros):
+        if i == 0:  # O primeiro é sempre o caller
+            participantes_lista.append(f"👑 **{membro}** `CALLER` → {pontos} pts")
+        else:
+            participantes_lista.append(f"- **{membro}** → {pontos} pts")
+    embed.add_field(
+        name="👥 Participantes",
+        value="\n".join(participantes_lista),
+        inline=False
+    )
+    # # Adicionar participantes
+    # participantes_lista = "\n".join([f"🟡 **{m}** → {pontos} pts" for m in membros])
+    # embed.add_field(
+    #     name="� Participantes",
+    #     value=participantes_lista,
+    #     inline=False
+    # )
+
+    embed.set_footer(text="Use !finalizar para confirmar e salvar a pontuação")
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def finalizar(ctx):
