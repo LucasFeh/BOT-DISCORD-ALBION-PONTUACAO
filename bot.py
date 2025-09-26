@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import aiohttp
 import asyncio
 
@@ -167,12 +168,18 @@ intents.message_content = True # Habilita o acesso ao conteúdo das mensagens
 
 # Criação do bot
 bot = commands.Bot(command_prefix='!', intents=intents)
+
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado como {bot.user}')
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔗 {len(synced)} comandos sincronizados (Slash Commands).")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar comandos: {e}")
 
-@bot.command()
-async def pontuacao(ctx):
+@bot.tree.command(name="pontuacao", description="Mostra a tabela de pontuação")
+async def pontuacao(interaction: discord.Interaction):
     # Criar um embed para uma tabela bonita
     embed = discord.Embed(
         title="📊 TABELA DE PONTOS - Paladinos Sagrados",
@@ -202,18 +209,40 @@ async def pontuacao(ctx):
     # Adicionar informações extras
     embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
     
-    await ctx.send(embed=embed) 
+    await interaction.response.send_message(embed=embed)
 
-@bot.command()
-async def conteudo(ctx, caller, tipo, *integrantes):
+
+# cria as opções automaticamente a partir do dicionário
+TIPOS_CHOICES = [
+    app_commands.Choice(name=nome, value=nome)
+    for nome in PONTOS_POR_CONTEUDO.keys()
+]
+
+@bot.tree.command(name="conteudo", description="Registra um novo conteúdo para pontuação")
+@app_commands.describe(
+    caller="Quem foi o caller da PT",
+    tipo="Tipo de conteúdo (DG, AVALON, BALEIA...)",
+    integrantes="Lista de integrantes separados por espaço"
+)
+@app_commands.choices(tipo=[
+    app_commands.Choice(name=f"{icones.get(key, '📋')} {key.replace('-', ' ').title()}", value=key)
+    for key in PONTOS_POR_CONTEUDO.keys()
+])
+async def conteudo(
+    interaction: discord.Interaction,
+    caller: str,
+    tipo: app_commands.Choice[str],   # 👈 aqui muda,
+    integrantes: str = ""
+):
     global conteudo_em_aberto
 
-    tipo = tipo.upper()
-    if tipo not in PONTOS_POR_CONTEUDO:
+    tipo_valor = tipo.value.upper()  # Isso pega a chave original (ex: "DG", "AVALON", etc.)
+
+    if tipo_valor not in PONTOS_POR_CONTEUDO:
         # Embed para erro
         embed_erro = discord.Embed(
             title="❌ Erro",
-            description=f"Tipo de conteúdo inválido: `{tipo}`",
+            description=f"Tipo de conteúdo inválido: `{tipo_valor}`",
             color=0xff0000  # Vermelho
         )
         embed_erro.add_field(
@@ -221,25 +250,25 @@ async def conteudo(ctx, caller, tipo, *integrantes):
             value=", ".join([f"`{t}`" for t in PONTOS_POR_CONTEUDO.keys()]),
             inline=False
         )
-        await ctx.send(embed=embed_erro)
+        await interaction.response.send_message(embed=embed_erro)
         return
 
-    pontos = PONTOS_POR_CONTEUDO[tipo]
-    membros = list(integrantes)
+    pontos = PONTOS_POR_CONTEUDO[tipo_valor]
+    membros = integrantes.split() if integrantes else []
     membros.insert(0, caller)  # Adiciona o caller também na pontuação
 
     conteudo_em_aberto = {
         "caller": caller,
-        "tipo": tipo,
+        "tipo": tipo_valor,
         "pontos": pontos,
         "membros": membros,
     }
 
     # Criar embed para prévia
-    icone = icones.get(tipo, "📋")
+    icone = icones.get(tipo_valor, "📋")
     embed = discord.Embed(
         title=f"📊 PRÉVIA DE PONTUAÇÃO",
-        description=f"{icone} **{tipo.replace('-', ' ').title()}** - {pontos} pts por pessoa",
+        description=f"{icone} **{tipo_valor.replace('-', ' ').title()}** - {pontos} pts por pessoa",
         color=0xffa500  # Laranja para prévia
     )
 
@@ -254,17 +283,9 @@ async def conteudo(ctx, caller, tipo, *integrantes):
         value="\n".join(participantes_lista),
         inline=False
     )
-    # # Adicionar participantes
-    # participantes_lista = "\n".join([f"🟡 **{m}** → {pontos} pts" for m in membros])
-    # embed.add_field(
-    #     name="� Participantes",
-    #     value=participantes_lista,
-    #     inline=False
-    # )
-
     embed.set_footer(text="Use !finalizar para confirmar e salvar a pontuação")
-    
-    await ctx.send(embed=embed)
+
+    await interaction.response.send_message(embed=embed)
 
 @bot.command()
 async def finalizar(ctx):
@@ -276,7 +297,7 @@ async def finalizar(ctx):
 
     # Aqui você salvaria no banco de dados real
     # Por enquanto só mostra e limpa
-    tipo = conteudo_em_aberto["tipo"]
+    tipo_valor = conteudo_em_aberto["tipo"]
     membros = conteudo_em_aberto["membros"]
 
     await ctx.send(f"✅ Conteúdo **{tipo}** finalizado e registrado para: {', '.join(membros)}")
