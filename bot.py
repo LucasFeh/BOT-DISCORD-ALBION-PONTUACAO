@@ -304,17 +304,22 @@ async def finalizar(ctx):
 
     conteudo_em_aberto = None
 
-@bot.command()
-async def split(ctx, valor, quantidade: int):
+@bot.tree.command(name="split", description="Divide um valor entre várias pessoas")
+@app_commands.describe(
+    valor="Valor total (ex: 17M, 500K, 2.5B)",
+    quantidade_de_membros="Número de pessoas para dividir"
+)
+
+async def split(interaction: discord.Interaction, valor: str, quantidade_de_membros: int):
     try:
         # Converter valor abreviado para número
         valor_original = valor  # Guardar o valor original para exibir
         valor_numerico = converter_valor_abreviado(valor)
         
-        if quantidade <= 0:
+        if quantidade_de_membros <= 0:
             raise ValueError("A quantidade deve ser maior que zero.")
 
-        valor_por_pessoa = valor_numerico / quantidade
+        valor_por_pessoa = valor_numerico / quantidade_de_membros
 
         # Formatar valores para exibição
         valor_formatado = formatar_valor_abreviado(valor_numerico)
@@ -322,20 +327,20 @@ async def split(ctx, valor, quantidade: int):
 
         embed = discord.Embed(
             title=f"💰 SPLIT DE VALOR",
-            description=f"💰 **{valor_formatado}** dividido por **{quantidade}** pessoas",
+            description=f"💰 **{valor_formatado}** dividido por **{quantidade_de_membros}** pessoas",
             color=0xffa500  # Laranja para prévia
         )
 
         # Campo com resumo
         embed.add_field(
             name="Resumo",
-            value=f"**Valor por pessoa**: {valor_pessoa_formatado}\n**Valor total**: {valor_formatado}",
+            value=f"**Valor por pessoa**: {valor_pessoa_formatado}",
             inline=False
         )
 
         embed.set_footer(text="Valores em formato abreviado (K=mil, M=milhão, B=bilhão) cada pessoa deve receber o valor indicado")
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
     except ValueError as e:
         embed_erro = discord.Embed(
@@ -343,7 +348,7 @@ async def split(ctx, valor, quantidade: int):
             description=f"Erro ao processar o comando: {e}\n\n💡 **Formatos aceitos:**\n`17M` (17 milhões)\n`500K` (500 mil)\n`2.5B` (2.5 bilhões)\n`1000` (número normal)",
             color=0xff0000
         )
-        await ctx.send(embed=embed_erro)
+        await interaction.response.send_message(embed=embed_erro)
 
 @bot.command()
 async def guilda(ctx):
