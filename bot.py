@@ -12,8 +12,8 @@ GUILD_ID = "JqtF-_HzQq20YAHK0_Ifig"
 PONTOS_POR_CONTEUDO = {
     "DG": 20,
     "AVALON": 30,
-    "COMUNIATARIO-BAIXO-RISCO": 75,
-    "COMUNIATARIO-ALTO-RISCO": 100,
+    "COMUNITARIO-BAIXO-RISCO": 75,
+    "COMUNITARIO-ALTO-RISCO": 100,
     "ARANHA DE CRISTAL": 25,
     "CAMPEONATO": 50,
     "DOACAO": 100,
@@ -23,8 +23,8 @@ PONTOS_POR_CONTEUDO = {
 icones = {
     "DG": "⚔️",
     "AVALON": "🏰",
-    "COMUNIATARIO-BAIXO-RISCO": "🛡️",
-    "COMUNIATARIO-ALTO-RISCO": "⚠️",
+    "COMUNITARIO-BAIXO-RISCO": "🛡️",
+    "COMUNITARIO-ALTO-RISCO": "⚠️",
     "ARANHA DE CRISTAL": "💎",
     "CAMPEONATO": "🏆",
     "DOACAO": "💰"
