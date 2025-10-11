@@ -10,24 +10,27 @@ GUILD_ID = "JqtF-_HzQq20YAHK0_Ifig"
 
 # Dicionário de pontuação por conteúdo
 PONTOS_POR_CONTEUDO = {
-    "DG": 20,
-    "AVALON": 30,
-    "COMUNITARIO-BAIXO-RISCO": 75,
-    "COMUNITARIO-ALTO-RISCO": 100,
-    "ARANHA DE CRISTAL": 25,
-    "CAMPEONATO": 50,
-    "DOACAO": 100,
+    "DG BENEFICIENTE": 10,
+    "MONTARIA - (600k)": 20,
+    "RE-GEAR (4M)": 30,
+    "ARMA 4.4": 50,
+    "MONTARIA (1.5M)": 60,
+    "MONTARIA (4M)": 80,
+    "PRATA (5M)": 90,
+    "ARMA 8.3": 250,
+    "MAMUTE": 4000
     # você pode adicionar mais tipos depois
 }
    # Mapear ícones para cada tipo de conteúdo
 icones = {
-    "DG": "⚔️",
-    "AVALON": "🏰",
-    "COMUNITARIO-BAIXO-RISCO": "🛡️",
-    "COMUNITARIO-ALTO-RISCO": "⚠️",
-    "ARANHA DE CRISTAL": "💎",
-    "CAMPEONATO": "🏆",
-    "DOACAO": "💰"
+    "MONTARIA - (600k)": "🐎",
+    "RE-GEAR (4M)": "🛡️",
+    "ARMA 4.4": "🗡️",
+    "MONTARIA (1.5M)": "🐎",
+    "MONTARIA (4M)": "🐎",
+    "PRATA (5M)": "💰",
+    "ARMA 8.3": "🗡️",
+    "MAMUTE": "🐘"
 }
     
 
@@ -180,37 +183,25 @@ async def on_ready():
 
 @bot.tree.command(name="pontuacao", description="Mostra a tabela de pontuação")
 async def pontuacao(interaction: discord.Interaction):
-    # Criar um embed para uma tabela bonita
     embed = discord.Embed(
-        title="📊 TABELA DE PONTOS - Paladinos Sagrados",
-        description="Sistema de pontuação por conteúdo",
-        color=0x00ff00  # Verde
+        title="📊 TABELA DE PONTOS - LOUCOS POR PVE [PVE]",
+        description="Sistema de pontuação",
+        color=0x00ff00
     )
-    
-    # Criar cabeçalhos da tabela
-    embed.add_field(name="📋 **CONTEÚDO**", value="━━━━━━━━━━━━━━━━━━━━━━━━━", inline=True)
-    embed.add_field(name="🎯 **PONTOS**", value="━━━━━━━━━━━━━━━━━━━━━━━━━", inline=True)
-    embed.add_field(name="\u200b", value="\u200b", inline=True)  # Campo vazio para quebra de linha
-    
-    # Adicionar cada linha da tabela
+
     for tipo, pontos in PONTOS_POR_CONTEUDO.items():
         icone = icones.get(tipo, "📋")
         nome_formatado = f"{icone} {tipo.replace('-', ' ').title()}"
         
-        # Coluna 1: Nome do conteúdo
-        embed.add_field(name="\u200b", value=nome_formatado, inline=True)
-        
-        # Coluna 2: Pontos em verde
-        embed.add_field(name="\u200b", value=f"```ansi\n\u001b[36m{pontos} pts\u001b[0m\n```", inline=True)
-        
-        # Coluna 3: Espaço vazio para quebrar linha
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-    
-    # Adicionar informações extras
-    embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
-    
-    await interaction.response.send_message(embed=embed)
+        # Cada linha é 1 field com nome e pontos
+        embed.add_field(
+            name=nome_formatado,
+            value=f"```ansi\n\u001b[36m{pontos} pts\u001b[0m```",
+            inline=False  # inline=False faz cada linha ocupar toda a largura do embed
+        )
 
+    embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
+    await interaction.response.send_message(embed=embed)
 
 # cria as opções automaticamente a partir do dicionário
 TIPOS_CHOICES = [
