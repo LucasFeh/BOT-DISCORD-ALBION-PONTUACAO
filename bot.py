@@ -5,8 +5,8 @@ import aiohttp
 import asyncio
 
 
-# ID fixo da guilda Paladinos Sagrados
-GUILD_ID = "JqtF-_HzQq20YAHK0_Ifig"
+# ID fixo da guilda LOUCOS POR PVE
+GUILD_ID = "QDufxXRfSiydcD58_Lo9KA"
 
 # Dicionário de pontuação por conteúdo
 PONTOS_POR_CONTEUDO = {
@@ -83,9 +83,9 @@ def formatar_valor_abreviado(valor):
 
 # Funções para API do Albion Online
 async def buscar_guilda_por_nome(nome_guilda):
-    """Busca informações da guilda Paladinos Sagrados usando o ID fixo"""
-    # Se for a guilda Paladinos Sagrados, usar o ID fixo
-    if nome_guilda.lower() in ["paladinos sagrados", "paladinos"]:
+    """Busca informações da guilda LOUCOS POR PVE usando o ID fixo"""
+    # Se for a guilda LOUCOS POR PVE, usar o ID fixo
+    if nome_guilda.lower() in ["LOUCOS POR PVE", "paladinos"]:
         return await buscar_guilda_por_id(GUILD_ID)
     
     # Para outras guildas, tentar buscar na API oficial
@@ -343,7 +343,7 @@ async def split(interaction: discord.Interaction, valor: str, quantidade_de_memb
 
 @bot.command()
 async def guilda(ctx):
-    """Mostra informações da guilda Paladinos Sagrados"""
+    """Mostra informações da guilda LOUCOS POR PVE"""
     
     # Embed de carregamento
     embed_loading = discord.Embed(
@@ -368,7 +368,7 @@ async def guilda(ctx):
         
         # Criar embed com informações da guilda
         embed = discord.Embed(
-            title="🏰 PALADINOS SAGRADOS",
+            title="🏰 LOUCOS POR PVE",
             description=f"Informações da guilda",
             color=0x00ff00
         )
@@ -416,7 +416,7 @@ async def guilda(ctx):
 
 @bot.command()
 async def membros(ctx):
-    """Lista todos os membros da guilda Paladinos Sagrados"""
+    """Lista todos os membros da guilda LOUCOS POR PVE"""
     
     # Embed de carregamento
     embed_loading = discord.Embed(
@@ -454,7 +454,7 @@ async def membros(ctx):
         # Criar embed com os membros
         embed = discord.Embed(
             title="👥 MEMBROS DA GUILDA",
-            description=f"🏰 **Paladinos Sagrados** ({len(membros)} membros)\n📊 Fonte: API Oficial Albion",
+            description=f"🏰 **LOUCOS POR PVE** ({len(membros)} membros)\n📊 Fonte: API Oficial Albion",
             color=0x00ff00
         )
         
@@ -542,7 +542,7 @@ async def membro(ctx, *, nome_membro):
         if not membro_info:
             embed_erro = discord.Embed(
                 title="❌ Membro não encontrado",
-                description=f"Não foi possível encontrar o membro **{nome_membro}** na guilda Paladinos Sagrados",
+                description=f"Não foi possível encontrar o membro **{nome_membro}** na guilda LOUCOS POR PVE",
                 color=0xff0000
             )
             embed_erro.add_field(
@@ -650,7 +650,7 @@ async def comandos(ctx):
     embed.add_field(name="!conteudo <caller> <tipo> <participantes>", value="Registra um conteúdo (ex: !conteudo Lucas DG Ana Joao)", inline=False)
     embed.add_field(name="!finalizar", value="Finaliza e salva o conteúdo em aberto", inline=False)
     embed.add_field(name="!split <valor> <quantidade>", value="Divide um valor entre uma quantidade de pessoas (ex: !split 17M 4)", inline=False)
-    embed.add_field(name="!guilda", value="Mostra informações da guilda Paladinos Sagrados", inline=False)
+    embed.add_field(name="!guilda", value="Mostra informações da guilda LOUCOS POR PVE", inline=False)
     embed.add_field(name="!membros", value="Lista todos os membros da guilda", inline=False)
     embed.add_field(name="!membro <nome>", value="Mostra estatísticas detalhadas de um membro específico", inline=False)
     embed.add_field(name="!botinfo", value="Mostra informações sobre o bot", inline=False)
