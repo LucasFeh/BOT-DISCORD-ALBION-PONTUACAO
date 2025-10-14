@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+import json
+import os
 import asyncio
 
 # intents = discord.Intents.default()
@@ -49,10 +51,73 @@ TIPOS_DE_DG = {
 }
     
 
+# Arquivo JSON para armazenar a pontuação (no mesmo diretório do bot.py)
+ARQUIVO_PONTUACAO = "pontuacao_membros.json"
+
+def carregar_pontuacao():
+    """Carrega a pontuação dos membros do arquivo JSON"""
+    if os.path.exists(ARQUIVO_PONTUACAO):
+        try:
+            with open(ARQUIVO_PONTUACAO, 'r', encoding='utf-8') as arquivo:
+                return json.load(arquivo)
+        except (json.JSONDecodeError, FileNotFoundError):
+            print("❌ Erro ao carregar arquivo de pontuação. Criando novo arquivo...")
+            return {}
+    return {}
+
+def salvar_pontuacao(pontuacao_dict):
+    """Salva a pontuação dos membros no arquivo JSON"""
+    try:
+        with open(ARQUIVO_PONTUACAO, 'w', encoding='utf-8') as arquivo:
+            json.dump(pontuacao_dict, arquivo, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao salvar pontuação: {e}")
+        return False
+
+def adicionar_pontos(nome_membro, pontos):
+    """Adiciona pontos a um membro específico"""
+    pontuacao = carregar_pontuacao()
+    
+    # Se o membro já existe, soma os pontos; senão, cria entrada nova
+    if nome_membro in pontuacao:
+        pontuacao[nome_membro] += pontos
+    else:
+        pontuacao[nome_membro] = pontos
+    
+    # Salvar no arquivo
+    if salvar_pontuacao(pontuacao):
+        return pontuacao[nome_membro]  # Retorna a pontuação total atual
+    return None
+
+def obter_pontuacao(nome_membro):
+    """Obtém a pontuação atual de um membro específico"""
+    pontuacao = carregar_pontuacao()
+    return pontuacao.get(nome_membro, 0)
+
+def obter_ranking():
+    """Obtém o ranking completo ordenado por pontuação"""
+    pontuacao = carregar_pontuacao()
+    # Ordenar por pontuação (maior para menor)
+    ranking = sorted(pontuacao.items(), key=lambda x: x[1], reverse=True)
+    return ranking
+
+def remover_membro(nome_membro):
+    """Remove um membro da lista de pontuação"""
+    pontuacao = carregar_pontuacao()
+    if nome_membro in pontuacao:
+        del pontuacao[nome_membro]
+        salvar_pontuacao(pontuacao)
+        return True
+    return False
+
+def resetar_pontuacao():
+    """Reseta toda a pontuação (cuidado!)"""
+    return salvar_pontuacao({})
+
+
 # Guardará temporariamente os dados antes de finalizar
 conteudo_em_aberto = None
-
-
 class FuncoesEquipeView(discord.ui.View):
     def __init__(self, membros, interaction_user):
         super().__init__(timeout=120)
@@ -61,43 +126,18 @@ class FuncoesEquipeView(discord.ui.View):
         self.interaction_user = interaction_user
         self.tank_set = False
         self.healer_set = False
-        self.interaction = None  # Adicione isso no __init__
+        self.interaction = None
 
         for membro in membros:
             self.add_item(FuncoesEquipeButton(membro, self))
-
-    async def update_embed(self, interaction):
-        embed = discord.Embed(
-            title="📊 PRÉVIA DE PONTUAÇÃO",
-            description="Clique nos botões abaixo para definir Tank e Healer.\nO restante será DPS.",
-            color=0xffa500
-        )
-        for membro in self.membros:
-            funcao = self.roles[membro]
-            emoji = "🛡️" if funcao == "TANK" else "💚" if funcao == "HEALER" else "⚔️"
-            embed.add_field(
-                name=f"{emoji} {membro}",
-                value=f"Função: **{funcao}**",
-                inline=False
-            )
-        await interaction.edit_original_response(embed=embed, view=self)
-
-class FuncoesEquipeView(discord.ui.View):
-    def __init__(self, membros, interaction_user):
-        super().__init__(timeout=120)
-        self.membros = membros
-        self.roles = {m: "DPS" for m in membros}
-        self.interaction_user = interaction_user
-        self.tank_set = False
-        self.healer_set = False
-
-        for membro in membros:
-            self.add_item(FuncoesEquipeButton(membro, self))
+        
+        # Adicionar botão de finalizar
+        self.add_item(FinalizarButton())
 
     async def update_embed(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="📊 PRÉVIA DE PONTUAÇÃO",
-            description="Clique nos botões abaixo para definir Tank e Healer.\nO restante será DPS.",
+            description="Clique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
             color=0xffa500
         )
         for membro in self.membros:
@@ -109,10 +149,115 @@ class FuncoesEquipeView(discord.ui.View):
                 inline=False
             )
         try:
-            await interaction.response.edit_message(embed=embed, view=self)  # MODIFICADO
+            await interaction.response.edit_message(embed=embed, view=self)
         except discord.InteractionResponded:
-            await interaction.edit_original_response(embed=embed, view=self)  # MODIFICADO
+            await interaction.edit_original_response(embed=embed, view=self)
 
+class FinalizarButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(label="✅ Finalizar", style=discord.ButtonStyle.success, row=4)
+
+    async def callback(self, interaction: discord.Interaction):
+        global conteudo_em_aberto
+
+        if interaction.user != self.view.interaction_user:
+            await interaction.response.send_message(
+                "❌ Apenas quem usou o comando pode finalizar.", ephemeral=True
+            )
+            return
+
+        # Calcular pontuação
+        pontuacao = {}
+        caller_nome = conteudo_em_aberto["caller"]
+        # CORRIGIDO: Filtrar membros para excluir o caller
+
+        membros_sem_caller = [m for m in self.view.membros if m != caller_nome]
+
+        for membro in membros_sem_caller:
+            funcao = self.view.roles[membro]
+            if funcao in ["TANK", "HEALER"]:
+                pontos = 2
+            else:  # DPS
+                pontos = 1
+            pontuacao[membro] = {"funcao": funcao, "pontos": pontos}
+
+        # Criar embed final formatado
+        embed_final = discord.Embed(
+            title="✅ DG BENEFICIENTE FINALIZADA",
+            description=f"**Caller:** 👑 {caller_nome} *(não recebe pontos)*",
+            color=0x00ff00
+        )
+
+        # Separar por função para melhor organização
+        tank_info = ""
+        healer_info = ""
+        dps_info = ""
+
+        for membro, info in pontuacao.items():
+            funcao = info["funcao"]
+            pontos = info["pontos"]
+            
+            if funcao == "TANK":
+                tank_info = f"🛡️ **{membro}** → +{pontos} pts"
+                adicionar_pontos(membro, pontos)
+            elif funcao == "HEALER":
+                healer_info = f"💚 **{membro}** → +{pontos} pts"
+                adicionar_pontos(membro, pontos)
+            else:  # DPS
+                if dps_info:
+                    dps_info += f"\n⚔️ **{membro}** → +{pontos} pts"
+                    adicionar_pontos(membro, pontos)
+                else:
+                    dps_info = f"⚔️ **{membro}** → +{pontos} pts"
+                    adicionar_pontos(membro, pontos)
+
+        # Adicionar campos organizados
+        participantes_texto = ""
+        if tank_info:
+            participantes_texto += tank_info + "\n"
+        if healer_info:
+            participantes_texto += healer_info + "\n"
+        if dps_info:
+            participantes_texto += dps_info
+
+        embed_final.add_field(
+            name="👥 Participantes e Pontuação",
+            value=participantes_texto,
+            inline=False
+        )
+
+        # Resumo
+        total_pontos = sum(info["pontos"] for info in pontuacao.values())
+        total_participantes = len(pontuacao)  # Não conta o caller
+
+        embed_final.add_field(
+            name="📊 Resumo",
+            value=f"**Total de pontos distribuídos:** {total_pontos}\n"
+                  f"**Participantes:** {total_participantes}\n"
+                  f"**Tank/Healer:** 2 pts cada | **DPS:** 1 pt cada\n" 
+                  f"**Caller:** Não recebe pontos",
+            inline=False
+        )
+
+        embed_final.set_footer(text="Pontuação registrada no sistema! 🎉")
+
+        # Enviar embed final e remover view da mensagem original
+        await interaction.response.send_message(embed=embed_final)
+        
+        # Desabilitar todos os botões da mensagem original
+        for item in self.view.children:
+            item.disabled = True
+        
+        embed_concluido = discord.Embed(
+            title="✅ PONTUAÇÃO CONCLUÍDA",
+            description="As funções foram definidas e a pontuação foi registrada.",
+            color=0x888888
+        )
+        
+        await self.view.interaction.edit_original_response(embed=embed_concluido, view=self.view)
+        
+        # Limpar conteúdo em aberto
+        conteudo_em_aberto = None
 
 class FuncoesEquipeButton(discord.ui.Button):
     def __init__(self, membro, view):
@@ -132,7 +277,7 @@ class FuncoesEquipeButton(discord.ui.Button):
             options.append(discord.SelectOption(label="TANK", emoji="🛡️"))
         if not self.view.healer_set or self.view.roles[self.membro] == "HEALER":
             options.append(discord.SelectOption(label="HEALER", emoji="💚"))
-        # options.append(discord.SelectOption(label="DPS", emoji="⚔️"))
+        options.append(discord.SelectOption(label="DPS", emoji="⚔️"))
 
         select = FuncoesEquipeSelect(self.membro, self.view, options)
         await interaction.response.send_message(
@@ -161,20 +306,32 @@ class FuncoesEquipeSelectMenu(discord.ui.Select):
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "TANK":
                     self.parent_view.roles[m] = "DPS"
+                if self.parent_view.roles[m] == "HEALER" and m == self.membro:
+                    self.parent_view.roles[m] = "TANK"
+                    self.parent_view.healer_set = False
             self.parent_view.roles[self.membro] = "TANK"
             self.parent_view.tank_set = True
         elif escolha == "HEALER":
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "HEALER":
                     self.parent_view.roles[m] = "DPS"
+                if self.parent_view.roles[m] == "TANK" and m == self.membro:
+                    self.parent_view.roles[m] = "HEALER"
+                    self.parent_view.tank_set = False
             self.parent_view.roles[self.membro] = "HEALER"
             self.parent_view.healer_set = True
+        elif escolha == "DPS":
+            if self.parent_view.roles[self.membro] == "TANK":
+                self.parent_view.roles[self.membro] = "DPS"
+                self.parent_view.tank_set = False
+            elif self.parent_view.roles[self.membro] == "HEALER":
+                self.parent_view.roles[self.membro] = "DPS"
+                self.parent_view.healer_set = False
         else:
             self.parent_view.roles[self.membro] = "DPS"
 
         # ⚡ Aqui: usar a interação do select para atualizar embed
         await self.parent_view.update_embed(interaction)
-        await interaction.response.defer()  # MODIFICADO: evita "essa integração falhou"
 
 # Função para converter valores abreviados (17M, 5K, etc) em números
 def converter_valor_abreviado(valor_str):
@@ -348,7 +505,6 @@ TIPOS_CHOICES = [
     for nome in TIPOS_DE_DG
 ]
 
-# No seu comando conteudo:
 @bot.tree.command(name="conteudo", description="Registra um novo conteúdo para pontuação")
 @app_commands.describe(
     caller="De quem foi a DG Beneficiente?",
@@ -357,7 +513,7 @@ TIPOS_CHOICES = [
 )
 @app_commands.choices(tipo=[
     app_commands.Choice(name=f"{icones.get(key, '📋')} {key.replace('-', ' ').title()}", value=key)
-    for key in TIPOS_DE_DG
+    for key in TIPOS_DE_DG  # Usar PONTOS_POR_CONTEUDO em vez de TIPOS_DE_DG
 ])
 async def conteudo(
     interaction: discord.Interaction,
@@ -368,21 +524,32 @@ async def conteudo(
     global conteudo_em_aberto
 
     tipo_valor = tipo.value
-    membros = []
+    
+    # Verificar se o tipo existe no dicionário de pontuação
+    if tipo_valor not in TIPOS_DE_DG:
+        embed_erro = discord.Embed(
+            title="❌ Tipo inválido",
+            description=f"O tipo **{tipo_valor}** não foi encontrado no sistema.",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        return
+
+    membros = [caller]  # Caller sempre é o primeiro
     if integrantes:
         for parte in integrantes.split():
             if parte.startswith("<@") and parte.endswith(">"):
                 user_id = parte.replace("<@", "").replace("!", "").replace(">", "")
-                user = interaction.guild.get_member(int(user_id))
-                if not user:
-                    try:
+                try:
+                    user = interaction.guild.get_member(int(user_id))
+                    if not user:
                         user = await interaction.guild.fetch_member(int(user_id))
-                    except Exception:
-                        user = None
-                if user:
-                    membros.append(user.display_name)
-                else:
-                    membros.append(parte)  # fallback: mostra o mention mesmo
+                    if user:
+                        membros.append(user.display_name)
+                    else:
+                        membros.append(parte)
+                except Exception:
+                    membros.append(parte)
             else:
                 membros.append(parte)
 
@@ -393,21 +560,24 @@ async def conteudo(
     }
 
     # Embed inicial
+    icone = icones.get(tipo_valor, "📋")
     embed = discord.Embed(
         title=f"📊 PRÉVIA DE PONTUAÇÃO",
-        description="Clique nos botões abaixo para definir Tank e Healer.\nO restante será DPS.",
+        description=f"{icone} **{tipo.name}**\n\nClique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
         color=0xffa500
     )
+    
     for membro in membros:
         embed.add_field(
             name=f"⚔️ {membro}",
             value="Função: **DPS**",
             inline=False
         )
+    
     view = FuncoesEquipeView(membros, interaction.user)
-    view.interaction = interaction  # Salve a interaction principal
+    view.interaction = interaction
     await interaction.response.send_message(embed=embed, view=view)
-
+    
 @bot.command()
 async def finalizar(ctx):
     global conteudo_em_aberto
@@ -705,26 +875,6 @@ async def membro(ctx, *, nome_membro):
         await loading_msg.edit(embed=embed_erro)
 
 @bot.command()
-async def comandos(ctx):
-    embed = discord.Embed(
-        title="📜Comandos Disponíveis",
-        description="Aqui estão os comandos que você pode usar:",
-        color=0x00ff00  # Verde
-    )
-    embed.add_field(name="!pontuacao", value="Mostra a tabela de pontuação", inline=False)
-    embed.add_field(name="!conteudo <caller> <tipo> <participantes>", value="Registra um conteúdo (ex: !conteudo Lucas DG Ana Joao)", inline=False)
-    embed.add_field(name="!finalizar", value="Finaliza e salva o conteúdo em aberto", inline=False)
-    embed.add_field(name="!split <valor> <quantidade>", value="Divide um valor entre uma quantidade de pessoas (ex: !split 17M 4)", inline=False)
-    embed.add_field(name="!guilda", value="Mostra informações da guilda LOUCOS POR PVE", inline=False)
-    embed.add_field(name="!membros", value="Lista todos os membros da guilda", inline=False)
-    embed.add_field(name="!membro <nome>", value="Mostra estatísticas detalhadas de um membro específico", inline=False)
-    embed.add_field(name="!botinfo", value="Mostra informações sobre o bot", inline=False)
-    embed.add_field(name="!comandos", value="Mostra esta lista de comandos", inline=False)
-    embed.set_footer(text="Desenvolvido por:  Lucas (Klartz)")
-
-    await ctx.send(embed=embed)
-
-@bot.command()
 async def botinfo(ctx):
 
     embed = discord.Embed(
@@ -742,5 +892,156 @@ async def botinfo(ctx):
     
     await ctx.send(embed=embed)
 
+@bot.tree.command(name="addpontos", description="Adiciona pontos a um membro")
+@app_commands.describe(
+    membro="Nome do membro",
+    pontos="Quantidade de pontos para adicionar"
+)
+async def addpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    try:
+        nova_pontuacao = adicionar_pontos(membro, pontos)
+        
+        if nova_pontuacao is not None:
+            embed = discord.Embed(
+                title="✅ Pontos Adicionados",
+                description=f"**{pontos}** pontos adicionados para **{membro}**",
+                color=0x00ff00
+            )
+            embed.add_field(
+                name="📊 Pontuação Atual",
+                value=f"**{membro}**: {nova_pontuacao} pontos",
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed_erro = discord.Embed(
+                title="❌ Erro",
+                description="Não foi possível salvar os pontos.",
+                color=0xff0000
+            )
+            await interaction.response.send_message(embed=embed_erro)
+            
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro)
+
+@bot.tree.command(name="pontos", description="Consulta a pontuação de um membro")
+@app_commands.describe(membro="Nome do membro para consultar")
+async def pontos(interaction: discord.Interaction, membro: str):
+    pontuacao_atual = obter_pontuacao(membro)
+    
+    embed = discord.Embed(
+        title="📊 Consulta de Pontuação",
+        color=0x0099ff
+    )
+    
+    if pontuacao_atual > 0:
+        embed.add_field(
+            name=f"🏆 {membro}",
+            value=f"**{pontuacao_atual}** pontos",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name=f"❌ {membro}",
+            value="Nenhum ponto registrado",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="ranking", description="Mostra o ranking completo de pontuação")
+async def ranking(interaction: discord.Interaction):
+    ranking_completo = obter_ranking()
+    
+    if not ranking_completo:
+        embed = discord.Embed(
+            title="📊 Ranking de Pontuação",
+            description="Nenhum membro possui pontos ainda.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title="🏆 RANKING DE PONTUAÇÃO - LOUCOS POR PVE",
+        description="Top membros por pontuação",
+        color=0xffd700
+    )
+    
+    # Mostrar top 10 (ou todos se menos de 10)
+    top_membros = ranking_completo[:10]
+    
+    ranking_texto = ""
+    for i, (nome, pontos) in enumerate(top_membros, 1):
+        if i == 1:
+            emoji = "🥇"
+        elif i == 2:
+            emoji = "🥈"
+        elif i == 3:
+            emoji = "🥉"
+        else:
+            emoji = f"{i}."
+            
+        ranking_texto += f"{emoji} **{nome}** - {pontos} pts\n"
+    
+    embed.add_field(
+        name="🏆 Top Membros",
+        value=ranking_texto,
+        inline=False
+    )
+    
+    if len(ranking_completo) > 10:
+        embed.set_footer(text=f"Mostrando top 10 de {len(ranking_completo)} membros")
+    else:
+        embed.set_footer(text=f"Total: {len(ranking_completo)} membros")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="removerpontos", description="Remove pontos de um membro")
+@app_commands.describe(
+    membro="Nome do membro",
+    pontos="Quantidade de pontos para remover"
+)
+async def removerpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    try:
+        # Remover pontos (adicionar pontos negativos)
+        nova_pontuacao = adicionar_pontos(membro, -pontos)
+        
+        if nova_pontuacao is not None:
+            embed = discord.Embed(
+                title="✅ Pontos Removidos",
+                description=f"**{pontos}** pontos removidos de **{membro}**",
+                color=0xff9900
+            )
+            embed.add_field(
+                name="📊 Pontuação Atual",
+                value=f"**{membro}**: {nova_pontuacao} pontos",
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed_erro = discord.Embed(
+                title="❌ Erro",
+                description="Não foi possível remover os pontos.",
+                color=0xff0000
+            )
+            await interaction.response.send_message(embed=embed_erro)
+            
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro)
+
+
+
 
 bot.run("MTQyMDQxNzA2MDY0Njk0OTAwNQ.GQNVUm.njRh09n8aqcNSBWnGzJeTAnREJHQTZDwuiTJ3o")
+
