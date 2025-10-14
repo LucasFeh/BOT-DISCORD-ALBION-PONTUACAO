@@ -52,7 +52,64 @@ TIPOS_DE_DG = {
     
 
 # Arquivo JSON para armazenar a pontuação (no mesmo diretório do bot.py)
+
 ARQUIVO_PONTUACAO = "pontuacao_membros.json"
+ARQUIVO_SORTEIOS = "sorteios.json"
+
+
+def carregar_sorteios():
+    """Carrega a lista de pessoas que ganharam sorteios"""
+    if os.path.exists(ARQUIVO_SORTEIOS):
+        try:
+            with open(ARQUIVO_SORTEIOS, 'r', encoding='utf-8') as arquivo:
+                return json.load(arquivo)
+        except (json.JSONDecodeError, FileNotFoundError):
+            print("❌ Erro ao carregar arquivo de sorteios. Criando novo arquivo...")
+            return []
+    return []
+
+def salvar_sorteios(lista_sorteios):
+    """Salva a lista de sorteios no arquivo JSON"""
+    try:
+        with open(ARQUIVO_SORTEIOS, 'w', encoding='utf-8') as arquivo:
+            json.dump(lista_sorteios, arquivo, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao salvar sorteios: {e}")
+        return False
+
+def verificar_tag_discord(member, tag_nome):
+    """Verifica se o membro tem uma TAG específica no Discord"""
+    if not member or not member.roles:
+        return False
+    
+    # Procurar pela role/tag específica (case insensitive)
+    for role in member.roles:
+        if tag_nome.lower() in role.name.lower():
+            return True
+    return False
+
+def adicionar_sorteio(nome_pessoa):
+    """Adiciona uma pessoa à lista de sorteios"""
+    sorteios = carregar_sorteios()
+    if nome_pessoa not in sorteios:
+        sorteios.append(nome_pessoa)
+        salvar_sorteios(sorteios)
+    return True
+
+def remover_sorteio(nome_pessoa):
+    """Remove uma pessoa da lista de sorteios"""
+    sorteios = carregar_sorteios()
+    if nome_pessoa in sorteios:
+        sorteios.remove(nome_pessoa)
+        salvar_sorteios(sorteios)
+        return True
+    return False
+
+def verificar_sorteio(nome_pessoa):
+    """Verifica se a pessoa ganhou algum sorteio"""
+    sorteios = carregar_sorteios()
+    return nome_pessoa in sorteios
 
 def carregar_pontuacao():
     """Carrega a pontuação dos membros do arquivo JSON"""
@@ -548,6 +605,9 @@ async def conteudo(
 ):
     global conteudo_em_aberto
 
+    # 🚀 RESPONDER IMEDIATAMENTE para evitar timeout
+    await interaction.response.defer()
+
     # NOVA VERIFICAÇÃO CORRIGIDA: Tratar mentions do caller
     usuario_comando = interaction.user.display_name  # Nome/apelido de quem executou o comando
     
@@ -587,7 +647,8 @@ async def conteudo(
         )
         embed_safado.set_footer(text="Sistema anti-trapaça ativado! Use seu próprio nome como caller.")
         
-        await interaction.response.send_message(embed=embed_safado)
+        # 🔧 USAR followup em vez de response
+        await interaction.followup.send(embed=embed_safado)
         return  # Interrompe a execução do comando
 
     tipo_valor = tipo.value
@@ -599,8 +660,70 @@ async def conteudo(
             description=f"O tipo **{tipo_valor}** não foi encontrado no sistema.",
             color=0xff0000
         )
-        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        # 🔧 USAR followup em vez de response
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
         return
+
+    # 🔥 NOVAS VERIFICAÇÕES POR TIPO 🔥
+    member = interaction.user  # Membro do Discord que executou o comando
+    
+    if tipo_valor == "PATROCIONADOR":
+        if not verificar_tag_discord(member, "patrocinador"):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Patrocinador",
+                description="Iiiih amigo, você não tem TAG de patrocinador, procure um **BRAÇO DIREITO**, ou o **Líder da guild** para saber mais sobre ser um patrocinador.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Patrocinador' podem usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    
+    elif tipo_valor == "SORTEIO":
+        if not verificar_sorteio(usuario_comando):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Sorteio",
+                description="Vissh você não ganhou nenhum sorteio atualmente, sinto muito, tente usar a sua pontuação.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas quem ganhou sorteios recentes pode usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    
+    elif tipo_valor == "RECRUTADOR":
+        if not verificar_tag_discord(member, "recrutador"):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Recrutador",
+                description="Tá tentando usar privilégio que não é pro seu bico né?? Tente ganhar um sorteio ou use seus pontos.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Recrutador' podem usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    
+    elif tipo_valor == "PONTUAÇÃO":
+        pontos_necessarios = 10
+        pontos_atuais = obter_pontuacao(usuario_comando)
+        
+        if pontos_atuais < pontos_necessarios:
+            embed_erro = discord.Embed(
+                title="❌ Pontos Insuficientes",
+                description=f"**{usuario_comando}**, você não tem pontos suficientes.\n\n"
+                           f"**Necessário para DG beneficiente:** {pontos_necessarios} pontos\n"
+                           f"**Você tem:** {pontos_atuais} pontos",
+                color=0xff0000
+            )
+            embed_erro.add_field(
+                name="💡 Como conseguir pontos:",
+                value="• Participe de DGs como Tank/Healer (+2 pts)\n• Participe de DGs como DPS (+1 pt)\n• Ganhe sorteios da guild",
+                inline=False
+            )
+            embed_erro.set_footer(text="Use /ranking para ver o ranking de pontuação.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
 
     # Usar o caller limpo (nome real) em vez do mention
     membros = [caller_limpo]  # CORRIGIDO: usar caller_limpo
@@ -644,9 +767,9 @@ async def conteudo(
     
     view = FuncoesEquipeView(membros, interaction.user)
     view.interaction = interaction
-    await interaction.response.send_message(embed=embed, view=view)
-
-
+    # 🔧 USAR followup em vez de response
+    await interaction.followup.send(embed=embed, view=view)
+    
 # @bot.command()
 # async def finalizar(ctx):
 #     global conteudo_em_aberto
@@ -1109,6 +1232,82 @@ async def removerpontos(interaction: discord.Interaction, membro: str, pontos: i
         )
         await interaction.response.send_message(embed=embed_erro)
 
+@bot.tree.command(name="addsorteio", description="Adiciona uma pessoa à lista de sorteios")
+@app_commands.describe(nome="Nome da pessoa que ganhou o sorteio")
+async def addsorteio(interaction: discord.Interaction, nome: str):
+    # Verificar se o usuário tem permissão (por exemplo, se é admin ou tem role específica)
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar a lista de sorteios.",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        return
+    
+    adicionar_sorteio(nome)
+    embed = discord.Embed(
+        title="✅ Sorteio Adicionado",
+        description=f"**{nome}** foi adicionado à lista de sorteios.",
+        color=0x00ff00
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="removesorteio", description="Remove uma pessoa da lista de sorteios")
+@app_commands.describe(nome="Nome da pessoa para remover da lista")
+async def removesorteio(interaction: discord.Interaction, nome: str):
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar a lista de sorteios.",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        return
+    
+    if remover_sorteio(nome):
+        embed = discord.Embed(
+            title="✅ Sorteio Removido",
+            description=f"**{nome}** foi removido da lista de sorteios.",
+            color=0x00ff00
+        )
+    else:
+        embed = discord.Embed(
+            title="❌ Não Encontrado",
+            description=f"**{nome}** não estava na lista de sorteios.",
+            color=0xff9900
+        )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="listsorteios", description="Lista todas as pessoas que ganharam sorteios")
+async def listsorteios(interaction: discord.Interaction):
+    sorteios = carregar_sorteios()
+    
+    if not sorteios:
+        embed = discord.Embed(
+            title="📋 Lista de Sorteios",
+            description="Nenhuma pessoa ganhou sorteios recentemente.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title="🎲 Lista de Sorteios Ativos",
+        description="Pessoas que ganharam sorteios e podem puxar DGs:",
+        color=0xffd700
+    )
+    
+    sorteios_texto = "\n".join([f"🎯 **{nome}**" for nome in sorteios])
+    embed.add_field(
+        name="🏆 Ganhadores Atuais",
+        value=sorteios_texto,
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Total: {len(sorteios)} pessoas")
+    await interaction.response.send_message(embed=embed)
 
 
 
