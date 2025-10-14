@@ -6,10 +6,10 @@ import json
 import os
 import asyncio
 
-# intents = discord.Intents.default()
-# intents.message_content = True
-# intents.members = True  # <-- Adicione esta linha!
-# bot = commands.Bot(command_prefix='!', intents=intents)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True  # <-- Adicione esta linha!
+bot = commands.Bot(command_prefix='!', intents=intents)
 
 # ID fixo da guilda LOUCOS POR PVE
 GUILD_ID = "QDufxXRfSiydcD58_Lo9KA"
@@ -85,6 +85,18 @@ def adicionar_pontos(nome_membro, pontos):
     else:
         pontuacao[nome_membro] = pontos
     
+    # Salvar no arquivo
+    if salvar_pontuacao(pontuacao):
+        return pontuacao[nome_membro]  # Retorna a pontuação total atual
+    return None
+
+def remover_pontos(nome_membro, pontos):
+    """Remove pontos de um membro específico"""
+    pontuacao = carregar_pontuacao()
+    
+    # Se o membro já existe, subtrai os pontos; senão, cria entrada nova
+    if nome_membro in pontuacao:
+        pontuacao[nome_membro] -= pontos
     # Salvar no arquivo
     if salvar_pontuacao(pontuacao):
         return pontuacao[nome_membro]  # Retorna a pontuação total atual
@@ -169,6 +181,7 @@ class FinalizarButton(discord.ui.Button):
         # Calcular pontuação
         pontuacao = {}
         caller_nome = conteudo_em_aberto["caller"]
+        tipo_conteudo = conteudo_em_aberto["tipo"]  # NOVO: pegar o tipo do conteúdo
         # CORRIGIDO: Filtrar membros para excluir o caller
 
         membros_sem_caller = [m for m in self.view.membros if m != caller_nome]
@@ -181,10 +194,17 @@ class FinalizarButton(discord.ui.Button):
                 pontos = 1
             pontuacao[membro] = {"funcao": funcao, "pontos": pontos}
 
+        # NOVO: Verificar se o tipo é "PONTUAÇÃO" e penalizar o caller
+        if tipo_conteudo == "PONTUAÇÃO":
+            remover_pontos(caller_nome, 10)  # Caller perde 10 pontos
+            penalidade_texto = f"**Caller:** 👑 {caller_nome} *(perdeu 10 pontos por ser tipo PONTUAÇÃO)*"
+        else:
+            penalidade_texto = f"**Caller:** 👑 {caller_nome} *(não recebe pontos)*"
+
         # Criar embed final formatado
         embed_final = discord.Embed(
             title="✅ DG BENEFICIENTE FINALIZADA",
-            description=f"**Caller:** 👑 {caller_nome} *(não recebe pontos)*",
+            description=f"*{penalidade_texto}*",
             color=0x00ff00
         )
 
@@ -229,13 +249,18 @@ class FinalizarButton(discord.ui.Button):
         # Resumo
         total_pontos = sum(info["pontos"] for info in pontuacao.values())
         total_participantes = len(pontuacao)  # Não conta o caller
-
+        resumo_texto = f"**Total de pontos distribuídos:** {total_pontos}\n"
+        resumo_texto += f"**Participantes que receberam pontos:** {total_participantes}\n"
+        resumo_texto += f"**Tank/Healer:** 2 pts cada | **DPS:** 1 pt cada\n"
+        
+        if tipo_conteudo == "PONTUAÇÃO":
+            resumo_texto += f"**Caller:** Perdeu 10 pontos (tipo PONTUAÇÃO) 📉"
+        else:
+            resumo_texto += f"**Caller:** Não recebe pontos"
+        
         embed_final.add_field(
             name="📊 Resumo",
-            value=f"**Total de pontos distribuídos:** {total_pontos}\n"
-                  f"**Participantes:** {total_participantes}\n"
-                  f"**Tank/Healer:** 2 pts cada | **DPS:** 1 pt cada\n" 
-                  f"**Caller:** Não recebe pontos",
+            value=resumo_texto,
             inline=False
         )
 
@@ -513,7 +538,7 @@ TIPOS_CHOICES = [
 )
 @app_commands.choices(tipo=[
     app_commands.Choice(name=f"{icones.get(key, '📋')} {key.replace('-', ' ').title()}", value=key)
-    for key in TIPOS_DE_DG  # Usar PONTOS_POR_CONTEUDO em vez de TIPOS_DE_DG
+    for key in TIPOS_DE_DG
 ])
 async def conteudo(
     interaction: discord.Interaction,
@@ -523,9 +548,51 @@ async def conteudo(
 ):
     global conteudo_em_aberto
 
+    # NOVA VERIFICAÇÃO CORRIGIDA: Tratar mentions do caller
+    usuario_comando = interaction.user.display_name  # Nome/apelido de quem executou o comando
+    
+    # Limpar o caller se for um mention
+    caller_limpo = caller
+    if caller.startswith("<@") and caller.endswith(">"):
+        user_id = caller.replace("<@", "").replace("!", "").replace(">", "")
+        try:
+            user = interaction.guild.get_member(int(user_id))
+            if not user:
+                user = await interaction.guild.fetch_member(int(user_id))
+            if user:
+                caller_limpo = user.display_name
+        except Exception:
+            # Se não conseguir converter o mention, manter o caller original
+            pass
+    
+    # Verificar se o caller (limpo) corresponde ao usuário que executou o comando
+    if caller_limpo.lower() != usuario_comando.lower():
+        # Aplicar "punição" de -5 pontos (brincadeira, mas funcional)
+        adicionar_pontos(usuario_comando, -5)
+        
+        embed_safado = discord.Embed(
+            title="🚨 EI SAFADO! 🚨",
+            description=f"**{usuario_comando}**, esse não é você! Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
+            color=0xff0000
+        )
+        embed_safado.add_field(
+            name="😂 Brincadeira...",
+            value="Mas não faz isso de novo, é sério! 😠",
+            inline=False
+        )
+        embed_safado.add_field(
+            name="🔍 Detalhes da verificação:",
+            value=f"**Você:** {usuario_comando}\n**Caller informado:** {caller_limpo}",
+            inline=False
+        )
+        embed_safado.set_footer(text="Sistema anti-trapaça ativado! Use seu próprio nome como caller.")
+        
+        await interaction.response.send_message(embed=embed_safado)
+        return  # Interrompe a execução do comando
+
     tipo_valor = tipo.value
     
-    # Verificar se o tipo existe no dicionário de pontuação
+    # Verificar se o tipo existe no dicionário
     if tipo_valor not in TIPOS_DE_DG:
         embed_erro = discord.Embed(
             title="❌ Tipo inválido",
@@ -535,7 +602,8 @@ async def conteudo(
         await interaction.response.send_message(embed=embed_erro, ephemeral=True)
         return
 
-    membros = [caller]  # Caller sempre é o primeiro
+    # Usar o caller limpo (nome real) em vez do mention
+    membros = [caller_limpo]  # CORRIGIDO: usar caller_limpo
     if integrantes:
         for parte in integrantes.split():
             if parte.startswith("<@") and parte.endswith(">"):
@@ -554,7 +622,7 @@ async def conteudo(
                 membros.append(parte)
 
     conteudo_em_aberto = {
-        "caller": caller,
+        "caller": caller_limpo,  # CORRIGIDO: usar caller_limpo
         "tipo": tipo_valor,
         "membros": membros,
     }
@@ -577,23 +645,24 @@ async def conteudo(
     view = FuncoesEquipeView(membros, interaction.user)
     view.interaction = interaction
     await interaction.response.send_message(embed=embed, view=view)
-    
-@bot.command()
-async def finalizar(ctx):
-    global conteudo_em_aberto
 
-    if not conteudo_em_aberto:
-        await ctx.send("❌ Nenhum conteúdo em aberto para finalizar.")
-        return
 
-    # Aqui você salvaria no banco de dados real
-    # Por enquanto só mostra e limpa
-    tipo_valor = conteudo_em_aberto["tipo"]
-    membros = conteudo_em_aberto["membros"]
+# @bot.command()
+# async def finalizar(ctx):
+#     global conteudo_em_aberto
 
-    await ctx.send(f"✅ Conteúdo **{tipo_valor}** finalizado e registrado para: {', '.join(membros)}")
+#     if not conteudo_em_aberto:
+#         await ctx.send("❌ Nenhum conteúdo em aberto para finalizar.")
+#         return
 
-    conteudo_em_aberto = None
+#     # Aqui você salvaria no banco de dados real
+#     # Por enquanto só mostra e limpa
+#     tipo_valor = conteudo_em_aberto["tipo"]
+#     membros = conteudo_em_aberto["membros"]
+
+#     await ctx.send(f"✅ Conteúdo **{tipo_valor}** finalizado e registrado para: {', '.join(membros)}")
+
+#     conteudo_em_aberto = None
 
 @bot.tree.command(name="split", description="Divide um valor entre várias pessoas")
 @app_commands.describe(
