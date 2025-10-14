@@ -82,6 +82,38 @@ class FuncoesEquipeView(discord.ui.View):
             )
         await interaction.edit_original_response(embed=embed, view=self)
 
+class FuncoesEquipeView(discord.ui.View):
+    def __init__(self, membros, interaction_user):
+        super().__init__(timeout=120)
+        self.membros = membros
+        self.roles = {m: "DPS" for m in membros}
+        self.interaction_user = interaction_user
+        self.tank_set = False
+        self.healer_set = False
+
+        for membro in membros:
+            self.add_item(FuncoesEquipeButton(membro, self))
+
+    async def update_embed(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="📊 PRÉVIA DE PONTUAÇÃO",
+            description="Clique nos botões abaixo para definir Tank e Healer.\nO restante será DPS.",
+            color=0xffa500
+        )
+        for membro in self.membros:
+            funcao = self.roles[membro]
+            emoji = "🛡️" if funcao == "TANK" else "💚" if funcao == "HEALER" else "⚔️"
+            embed.add_field(
+                name=f"{emoji} {membro}",
+                value=f"Função: **{funcao}**",
+                inline=False
+            )
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)  # MODIFICADO
+        except discord.InteractionResponded:
+            await interaction.edit_original_response(embed=embed, view=self)  # MODIFICADO
+
+
 class FuncoesEquipeButton(discord.ui.Button):
     def __init__(self, membro, view):
         super().__init__(label=membro, style=discord.ButtonStyle.secondary)
@@ -89,7 +121,9 @@ class FuncoesEquipeButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.view.interaction_user:
-            await interaction.response.send_message("Apenas quem usou o comando pode definir as funções.", ephemeral=True)
+            await interaction.response.send_message(
+                "Apenas quem usou o comando pode definir as funções.", ephemeral=True
+            )
             return
 
         # Menu para escolher função
@@ -107,10 +141,12 @@ class FuncoesEquipeButton(discord.ui.Button):
             ephemeral=True
         )
 
+
 class FuncoesEquipeSelect(discord.ui.View):
     def __init__(self, membro, parent_view, options):
         super().__init__(timeout=30)
         self.add_item(FuncoesEquipeSelectMenu(membro, parent_view, options))
+
 
 class FuncoesEquipeSelectMenu(discord.ui.Select):
     def __init__(self, membro, parent_view, options):
@@ -122,28 +158,23 @@ class FuncoesEquipeSelectMenu(discord.ui.Select):
         escolha = self.values[0]
         # Atualiza funções
         if escolha == "TANK":
-            # Remove tank anterior
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "TANK":
                     self.parent_view.roles[m] = "DPS"
-                if self.parent_view.roles[m] == "HEALER" and m == self.membro:
-                    self.parent_view.roles[m] = "DPS"
-                    self.parent_view.healer_set = False
             self.parent_view.roles[self.membro] = "TANK"
             self.parent_view.tank_set = True
         elif escolha == "HEALER":
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "HEALER":
                     self.parent_view.roles[m] = "DPS"
-                if self.parent_view.roles[m] == "TANK" and m == self.membro:
-                    self.parent_view.roles[m] = "DPS"
-                    self.parent_view.tank_set = False
             self.parent_view.roles[self.membro] = "HEALER"
             self.parent_view.healer_set = True
         else:
             self.parent_view.roles[self.membro] = "DPS"
-        await self.parent_view.update_embed(self.parent_view.interaction)
-        # await interaction.response.edit_message(content="Função definida!", view=None)
+
+        # ⚡ Aqui: usar a interação do select para atualizar embed
+        await self.parent_view.update_embed(interaction)
+        await interaction.response.defer()  # MODIFICADO: evita "essa integração falhou"
 
 # Função para converter valores abreviados (17M, 5K, etc) em números
 def converter_valor_abreviado(valor_str):
@@ -390,7 +421,7 @@ async def finalizar(ctx):
     tipo_valor = conteudo_em_aberto["tipo"]
     membros = conteudo_em_aberto["membros"]
 
-    await ctx.send(f"✅ Conteúdo **{tipo}** finalizado e registrado para: {', '.join(membros)}")
+    await ctx.send(f"✅ Conteúdo **{tipo_valor}** finalizado e registrado para: {', '.join(membros)}")
 
     conteudo_em_aberto = None
 
