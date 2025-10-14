@@ -57,6 +57,24 @@ ARQUIVO_PONTUACAO = "pontuacao_membros.json"
 ARQUIVO_SORTEIOS = "sorteios.json"
 
 
+async def tratar_mention(interaction: discord.Interaction, nome_ou_mention: str):
+    """Converte mention para nome real, se necessário"""
+    nome_limpo = nome_ou_mention
+    
+    if nome_ou_mention.startswith("<@") and nome_ou_mention.endswith(">"):
+        user_id = nome_ou_mention.replace("<@", "").replace("!", "").replace(">", "")
+        try:
+            user = interaction.guild.get_member(int(user_id))
+            if not user:
+                user = await interaction.guild.fetch_member(int(user_id))
+            if user:
+                nome_limpo = user.display_name
+        except Exception:
+            # Se não conseguir converter o mention, manter o nome original
+            pass
+    
+    return nome_limpo
+
 def carregar_sorteios():
     """Carrega a lista de pessoas que ganharam sorteios"""
     if os.path.exists(ARQUIVO_SORTEIOS):
@@ -559,11 +577,11 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos: {e}")
 
-@bot.tree.command(name="pontuacao", description="Mostra a tabela de pontuação")
-async def pontuacao(interaction: discord.Interaction):
+@bot.tree.command(name="recompensas", description="Mostra a tabela de recompensas")
+async def recompensas(interaction: discord.Interaction):
     embed = discord.Embed(
-        title="📊 TABELA DE PONTOS - LOUCOS POR PVE [PVE]",
-        description="Sistema de pontuação",
+        title="📊 TABELA DE RECOMPENSAS - LOUCOS POR PVE [PVE]",
+        description="Sistema de recompensas para membros da guilda.\n\n",
         color=0x00ff00
     )
 
@@ -632,7 +650,7 @@ async def conteudo(
         
         embed_safado = discord.Embed(
             title="🚨 EI SAFADO! 🚨",
-            description=f"**{usuario_comando}**, esse não é você! Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
+            description=f"**{usuario_comando}**, esse não é você! {caller} Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
             color=0xff0000
         )
         embed_safado.add_field(
@@ -1084,34 +1102,63 @@ async def botinfo(ctx):
     
     await ctx.send(embed=embed)
 
+
+
+
+# ------------------------------------- ADCIONAR PONTOS ---------------------------------
+
 @bot.tree.command(name="addpontos", description="Adiciona pontos a um membro")
 @app_commands.describe(
-    membro="Nome do membro",
+    membro="Nome do membro ou @mention",
     pontos="Quantidade de pontos para adicionar"
 )
 async def addpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
     try:
-        nova_pontuacao = adicionar_pontos(membro, pontos)
+        # 🔧 TRATAR MENTION
+        membro_limpo = await tratar_mention(interaction, membro)
+        nova_pontuacao = adicionar_pontos(membro_limpo, pontos)
         
         if nova_pontuacao is not None:
             embed = discord.Embed(
                 title="✅ Pontos Adicionados",
-                description=f"**{pontos}** pontos adicionados para **{membro}**",
+                description=f"**{pontos}** pontos adicionados para **{membro_limpo}**",
                 color=0x00ff00
             )
             embed.add_field(
                 name="📊 Pontuação Atual",
-                value=f"**{membro}**: {nova_pontuacao} pontos",
+                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
                 inline=False
             )
-            await interaction.response.send_message(embed=embed)
+            
+            # Se foi um mention, mostrar info adicional
+            if membro != membro_limpo:
+                embed.add_field(
+                    name="🔍 Conversão",
+                    value=f"Mention {membro} → **{membro_limpo}**",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)
         else:
             embed_erro = discord.Embed(
                 title="❌ Erro",
                 description="Não foi possível salvar os pontos.",
                 color=0xff0000
             )
-            await interaction.response.send_message(embed=embed_erro)
+            await interaction.followup.send(embed=embed_erro)
             
     except Exception as e:
         embed_erro = discord.Embed(
@@ -1119,13 +1166,19 @@ async def addpontos(interaction: discord.Interaction, membro: str, pontos: int):
             description=f"Ocorreu um erro: {str(e)}",
             color=0xff0000
         )
-        await interaction.response.send_message(embed=embed_erro)
+        await interaction.followup.send(embed=embed_erro)
 
-@bot.tree.command(name="pontos", description="Consulta a pontuação de um membro")
+
+# ------------------------------------- CONSULTAR POONTOS ---------------------------------
+
+
+@bot.tree.command(name="consultar_pontuação", description="Consulta a pontuação de um membro")
 @app_commands.describe(membro="Nome do membro para consultar")
 async def pontos(interaction: discord.Interaction, membro: str):
-    pontuacao_atual = obter_pontuacao(membro)
-    
+
+    membro_limpo = await tratar_mention(interaction, membro)
+    pontuacao_atual = obter_pontuacao(membro_limpo)
+
     embed = discord.Embed(
         title="📊 Consulta de Pontuação",
         color=0x0099ff
@@ -1145,6 +1198,11 @@ async def pontos(interaction: discord.Interaction, membro: str):
         )
     
     await interaction.response.send_message(embed=embed)
+
+
+
+# ------------------------------------- RANKING DE PONTUAÇÃO ---------------------------------
+
 
 @bot.tree.command(name="ranking", description="Mostra o ranking completo de pontuação")
 async def ranking(interaction: discord.Interaction):
@@ -1194,35 +1252,61 @@ async def ranking(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
+
+# ------------------------------------- REMOVER PONTOS ---------------------------------
+
+
+
 @bot.tree.command(name="removerpontos", description="Remove pontos de um membro")
 @app_commands.describe(
-    membro="Nome do membro",
+    membro="Nome do membro ou @mention",
     pontos="Quantidade de pontos para remover"
 )
 async def removerpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    # 🚀 ADICIONAR DEFER
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # USAR FOLLOWUP
+        return
+
     try:
-        # Remover pontos (adicionar pontos negativos)
-        nova_pontuacao = adicionar_pontos(membro, -pontos)
+        membro_limpo = await tratar_mention(interaction, membro)
+        nova_pontuacao = adicionar_pontos(membro_limpo, -pontos)
         
         if nova_pontuacao is not None:
             embed = discord.Embed(
                 title="✅ Pontos Removidos",
-                description=f"**{pontos}** pontos removidos de **{membro}**",
+                description=f"**{pontos}** pontos removidos de **{membro_limpo}**",
                 color=0xff9900
             )
             embed.add_field(
                 name="📊 Pontuação Atual",
-                value=f"**{membro}**: {nova_pontuacao} pontos",
+                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
                 inline=False
             )
-            await interaction.response.send_message(embed=embed)
+            
+            if membro != membro_limpo:
+                embed.add_field(
+                    name="🔍 Conversão",
+                    value=f"Mention {membro} → **{membro_limpo}**",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)  # USAR FOLLOWUP
         else:
             embed_erro = discord.Embed(
                 title="❌ Erro",
                 description="Não foi possível remover os pontos.",
                 color=0xff0000
             )
-            await interaction.response.send_message(embed=embed_erro)
+            await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
             
     except Exception as e:
         embed_erro = discord.Embed(
@@ -1230,32 +1314,17 @@ async def removerpontos(interaction: discord.Interaction, membro: str, pontos: i
             description=f"Ocorreu um erro: {str(e)}",
             color=0xff0000
         )
-        await interaction.response.send_message(embed=embed_erro)
+        await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
+
+# ------------------------------------- ADICIONAR SORTEIO ---------------------------------
+
 
 @bot.tree.command(name="addsorteio", description="Adiciona uma pessoa à lista de sorteios")
-@app_commands.describe(nome="Nome da pessoa que ganhou o sorteio")
+@app_commands.describe(nome="Nome da pessoa ou @mention que ganhou o sorteio")
 async def addsorteio(interaction: discord.Interaction, nome: str):
-    # Verificar se o usuário tem permissão (por exemplo, se é admin ou tem role específica)
-    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
-        embed_erro = discord.Embed(
-            title="❌ Sem Permissão",
-            description="Apenas admins podem gerenciar a lista de sorteios.",
-            color=0xff0000
-        )
-        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
-        return
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
     
-    adicionar_sorteio(nome)
-    embed = discord.Embed(
-        title="✅ Sorteio Adicionado",
-        description=f"**{nome}** foi adicionado à lista de sorteios.",
-        color=0x00ff00
-    )
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="removesorteio", description="Remove uma pessoa da lista de sorteios")
-@app_commands.describe(nome="Nome da pessoa para remover da lista")
-async def removesorteio(interaction: discord.Interaction, nome: str):
     # Verificar se o usuário tem permissão
     if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
         embed_erro = discord.Embed(
@@ -1263,22 +1332,95 @@ async def removesorteio(interaction: discord.Interaction, nome: str):
             description="Apenas admins podem gerenciar a lista de sorteios.",
             color=0xff0000
         )
-        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
         return
     
-    if remover_sorteio(nome):
+    try:
+        # 🔧 TRATAR MENTION
+        nome_limpo = await tratar_mention(interaction, nome)
+        
+        adicionar_sorteio(nome_limpo)
         embed = discord.Embed(
-            title="✅ Sorteio Removido",
-            description=f"**{nome}** foi removido da lista de sorteios.",
+            title="✅ Sorteio Adicionado",
+            description=f"**{nome_limpo}** foi adicionado à lista de sorteios.",
             color=0x00ff00
         )
-    else:
-        embed = discord.Embed(
-            title="❌ Não Encontrado",
-            description=f"**{nome}** não estava na lista de sorteios.",
-            color=0xff9900
+        
+        # Se foi um mention, mostrar info adicional
+        if nome != nome_limpo:
+            embed.add_field(
+                name="🔍 Conversão",
+                value=f"Mention {nome} → **{nome_limpo}**",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
+        
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
         )
-    await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
+
+# ------------------------------------- REMOVER SORTEIO ---------------------------------
+
+@bot.tree.command(name="removesorteio", description="Remove uma pessoa da lista de sorteios")
+@app_commands.describe(nome="Nome da pessoa ou @mention para remover da lista")
+async def removesorteio(interaction: discord.Interaction, nome: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar a lista de sorteios.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
+        return
+    
+    try:
+        # 🔧 TRATAR MENTION
+        nome_limpo = await tratar_mention(interaction, nome)
+        
+        if remover_sorteio(nome_limpo):
+            embed = discord.Embed(
+                title="✅ Sorteio Removido",
+                description=f"**{nome_limpo}** foi removido da lista de sorteios.",
+                color=0x00ff00
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Não Encontrado",
+                description=f"**{nome_limpo}** não estava na lista de sorteios.",
+                color=0xff9900
+            )
+        
+        # Se foi um mention, mostrar info adicional
+        if nome != nome_limpo:
+            embed.add_field(
+                name="🔍 Conversão",
+                value=f"Mention {nome} → **{nome_limpo}**",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
+        
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
+
+
+
+# ------------------------------------- LISTAR SORTEIO ---------------------------------
+
 
 @bot.tree.command(name="listsorteios", description="Lista todas as pessoas que ganharam sorteios")
 async def listsorteios(interaction: discord.Interaction):
