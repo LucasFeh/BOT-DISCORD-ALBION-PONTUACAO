@@ -17,6 +17,13 @@ import asyncio
 
 
 intents = discord.Intents.default()
+def ler_token():
+    try:
+        with open("TOKEN.TXT", "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return None
+token = ler_token()
 intents.message_content = True
 intents.members = True  # <-- Adicione esta linha!
 intents = discord.Intents.all()
@@ -2072,5 +2079,7 @@ async def buscar_membro_por_nome(nome_membro):
             return None
 
 
-bot.run("MTQyMDQxNzA2MDY0Njk0OTAwNQ.GQNVUm.njRh09n8aqcNSBWnGzJeTAnREJHQTZDwuiTJ3o")
+if not token:
+    raise RuntimeError("Token do Discord não encontrado. Coloque seu token em TOKEN.TXT.")
+bot.run(token)
 

@@ -118,7 +118,7 @@
   "[PVE] Miketz": 3,
   "[IPVE] MgR2": 1,
   "[IPVE] Reaperr": 4,
-  "[PVE] OnassisFeitosa": 1,
+  "[PVE] OnassisFeitosa": 18,
   "[PVE] Albanolol": 3,
   "[IPVE] FabaoFattori": 10,
   "[PVE] cbjrraphael": 14,
@@ -148,7 +148,7 @@
   "[PVE] Jvvrrr": 2,
   "[IPVE] Muziconha": 8,
   "[PVE] M44XXX": 12,
-  "[IPVE] Klartz": 12,
+  "[IPVE] Klartz": 5,
   "[PVE] Akurian": 1,
   "[PVE] MiZuHaRaChaN": 1,
   "[IPVE] MonzaTubarao1": 2,
@@ -217,5 +217,6 @@
   "[PVE] DIONSIOxxx": 5,
   "[PVE] 66Treta": 2,
   "[PVE] CriadorRX": 1,
-  "[PVE] ImLINS": 13
+  "[PVE] ImLINS": 13,
+  "onassisfeitosa": 10
 }
