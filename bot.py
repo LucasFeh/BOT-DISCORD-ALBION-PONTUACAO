@@ -1,3 +1,12 @@
+
+import datetime
+import re
+import aiofiles
+import pytz
+import re
+import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+import csv
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -6,12 +15,15 @@ import json
 import os
 import asyncio
 
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True  # <-- Adicione esta linha!
+intents = discord.Intents.all()
+print("🧠 Intents.members está:", intents.members)
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ID fixo da guilda LOUCOS POR PVE
+# ID fixo da guilda LOUCOS POR PVE (apenas para API do Albion Online)
 GUILD_ID = "QDufxXRfSiydcD58_Lo9KA"
 
 # Dicionário de pontuação por conteúdo
@@ -27,7 +39,15 @@ PONTOS_POR_CONTEUDO = {
     "MAMUTE": 4000
     # você pode adicionar mais tipos depois
 }
-   # Mapear ícones para cada tipo de conteúdo
+
+TIPOS_DE_DG = {
+    "SORTEIO",
+    "PATROCIONADOR",
+    "PONTUAÇÃO",
+    "RECRUTADOR"
+}
+
+# Mapear ícones
 icones = {
     "MONTARIA - (600k)": "🐎",
     "RE-GEAR (4M)": "🛡️",
@@ -42,19 +62,1406 @@ icones = {
     "PONTUAÇÃO": "🏆",
     "RECRUTADOR": "🤝"
 }
-
-TIPOS_DE_DG = {
-    "SORTEIO",
-    "PATROCIONADOR",
-    "PONTUAÇÃO",
-    "RECRUTADOR"
-}
     
 
 # Arquivo JSON para armazenar a pontuação (no mesmo diretório do bot.py)
 
 ARQUIVO_PONTUACAO = "pontuacao_membros.json"
 ARQUIVO_SORTEIOS = "sorteios.json"
+ARQUIVO_PATROCINADOR = "patrocinadores.json"
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# -------------------------------------------------- SETUP() -----------------------------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+# Adiciona tarefa agendada para atualizar patrocinadores todo domingo à meia-noite
+@bot.event
+async def on_ready():
+    for guild in bot.guilds:
+        # print(f"[GUILD] Verificando guilda: {guild.name} (ID: {guild.id})")
+        if guild.id == 1183472048228548668:  # Substitua pelo ID da sua guilda
+            print(f"[GUILD] Conectado à guilda: {guild.name} (ID: {guild.id})")
+            await guild.chunk()
+            # --- Ranking tags ---
+            ranking = obter_ranking()
+            tags = ["Ranking 1🥇", "Ranking 2🥈", "Ranking 3🥉"]
+            top_nomes = [nome for nome, _ in ranking[:3]]
+            # Garantir que as roles existem
+            for tag in tags:
+                if not discord.utils.get(guild.roles, name=tag):
+                    try:
+                        await guild.create_role(name=tag)
+                    except discord.Forbidden:
+                        print(f"[ERRO] Sem permissão para criar o cargo '{tag}' na guild '{guild.name}'. Verifique a hierarquia e permissões do bot.")
+                    except Exception as e:
+                        print(f"[ERRO] Falha ao criar o cargo '{tag}' na guild '{guild.name}': {e}")
+            # Atualizar roles dos membros
+            for i, tag in enumerate(tags):
+                role = discord.utils.get(guild.roles, name=tag)
+                nome = top_nomes[i] if i < len(top_nomes) else None
+                for member in guild.members:
+                    # Se o membro é o top i, garantir que tem a role
+                    if nome and member.display_name == nome:
+                        if role and role not in member.roles:
+                            try:
+                                await member.add_roles(role, reason="Ranking de pontuação")
+                            except Exception as e:
+                                print(f"[TAG] Erro ao adicionar role {tag} para {nome}: {e}")
+                    # Se não é top i, remover a role se tiver
+                    else:
+                        if role and role in member.roles:
+                            try:
+                                await member.remove_roles(role, reason="Ranking de pontuação")
+                            except Exception as e:
+                                print(f"[TAG] Erro ao remover role {tag} de {member.display_name}: {e}")
+    print(f'✅ Bot conectado como {bot.user}')
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔗 {len(synced)} comandos sincronizados (Slash Commands).")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar comandos: {e}")
+
+    # Inicia a tarefa agendada
+    if not hasattr(bot, 'patrocinador_task_started'):
+        bot.loop.create_task(agendar_atualizacao_patrocinadores())
+        bot.patrocinador_task_started = True
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ----------------------------------------- ADICONAR GANHADORES SORTEIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+# Observa mensagens no canal ・dg-beneficente e adiciona ganhadores ao sorteios.json
+@bot.event
+async def on_message(message):
+    # Ignorar mensagens do próprio bot
+    if message.author.bot:
+        return
+
+    print(f"[DEBUG] Mensagem recebida no canal: {message.channel.name}")
+
+    # Verifica se é o canal correto (pode ser pelo nome ou ID)
+    if message.channel.name == "🎁・dg-beneficente":
+        texto = message.content
+        # print(f"[DEBUG] Conteúdo da mensagem: {texto}")
+        # Regex para pegar nomes no formato @[TAG] Nome
+        padrao = r"@\[([^\]]+)\]\s*([^,\n!]+)"
+        nomes = re.findall(padrao, texto)
+        # print(f"[DEBUG] Nomes extraídos: {nomes}")
+        if nomes and "You won the DG BENEFICENTE!" in texto:
+            ganhadores = []
+            for tag, nome in nomes:
+                nome_completo = f"[{tag}] {nome.strip()}"
+                # print(f"[DEBUG] Adicionando ao sorteio: {nome_completo}")
+                adicionar_sorteio(nome_completo)
+                ganhadores.append(nome_completo)
+            if ganhadores:
+                nomes_str = ", ".join(f"**{n}**" for n in ganhadores)
+                msg = (
+                    f"🎉 Parabéns {nomes_str}!\n"
+                    "Adicionado na lista de DG beneficente, já pode ir lá jogar meus queridos!! 🥳💥"
+                )
+                await message.channel.send(msg)
+    # Permite que comandos normais funcionem
+    await bot.process_commands(message)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- LISTAR RECOMPENSAS DE PONTOS ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+    
+@bot.tree.command(name="recompensas", description="Mostra a tabela de recompensas")
+async def recompensas(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📊 TABELA DE RECOMPENSAS - LOUCOS POR PVE [PVE]",
+        description="Sistema de recompensas para membros da guilda.\n\n",
+        color=0x00ff00
+    )
+
+    for tipo, pontos in PONTOS_POR_CONTEUDO.items():
+        icone = icones.get(tipo, "📋")
+        nome_formatado = f"{icone} {tipo.replace('-', ' ').title()}"
+        
+        # Cada linha é 1 field com nome e pontos
+        embed.add_field(
+            name=nome_formatado,
+            value=f"```ansi\n\u001b[36m{pontos} pts\u001b[0m```",
+            inline=False  # inline=False faz cada linha ocupar toda a largura do embed
+        )
+
+    embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
+    await interaction.response.send_message(embed=embed)
+
+# cria as opções automaticamente a partir do dicionário
+TIPOS_CHOICES = [
+    app_commands.Choice(name=nome, value=nome)
+    for nome in TIPOS_DE_DG
+]
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- FUNÇÃO PRINCIPAL (CONTEUDINHO ) ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+@bot.tree.command(name="dg_beneficente", description="Registra uma DG beneficente")
+@app_commands.describe(
+    # caller="De quem foi a DG Beneficiente?",
+    tipo="Tipo da Beneficiente",
+    integrantes="Lista de integrantes separados por espaço"
+)
+@app_commands.choices(tipo=[
+    app_commands.Choice(name=f"{icones.get(key, '📋')} {key.replace('-', ' ').title()}", value=key)
+    for key in TIPOS_DE_DG
+])
+async def dg_beneficente(
+    interaction: discord.Interaction,
+    # caller: str,
+    tipo: app_commands.Choice[str],
+    integrantes: str = ""
+):
+    global conteudo_em_aberto
+
+    # 🚀 RESPONDER IMEDIATAMENTE para evitar timeout
+    await interaction.response.defer()
+
+    # NOVA VERIFICAÇÃO CORRIGIDA: Tratar mentions do caller
+    usuario_comando = interaction.user.display_name  # Nome/apelido de quem executou o comando
+    
+    # Limpar o caller se for um mention (usando função auxiliar correta)
+    # caller_limpo = await tratar_mention(interaction, caller)
+    
+    # Verificar se o caller (limpo) corresponde ao usuário que executou o comando
+    # if caller_limpo.lower() != usuario_comando.lower():  
+    #     embed_safado = discord.Embed(
+    #         title="🚨 EI SAFADO! 🚨",
+    #         description=f"**{usuario_comando}**, esse não é você! {caller} Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
+    #         color=0xff0000
+    #     )
+    #     embed_safado.add_field(
+    #         name="😂 Brincadeira...",
+    #         value="Mas não faz isso de novo, é sério! 😠",
+    #         inline=False
+    #     )
+    #     embed_safado.add_field(
+    #         name="🔍 Detalhes da verificação:",
+    #         value=f"**Você:** {usuario_comando}\n**Caller informado:** {caller_limpo}",
+    #         inline=False
+    #     )
+    #     embed_safado.set_footer(text="Sistema anti-trapaça ativado! Use seu próprio nome como caller.")
+        
+    #     # 🔧 USAR followup em vez de response
+    #     await interaction.followup.send(embed=embed_safado)
+    #     return  # Interrompe a execução do comando
+
+    tipo_valor = tipo.value
+    
+    # Verificar se o tipo existe no dicionário
+    if tipo_valor not in TIPOS_DE_DG:
+        embed_erro = discord.Embed(
+            title="❌ Tipo inválido",
+            description=f"O tipo **{tipo_valor}** não foi encontrado no sistema.",
+            color=0xff0000
+        )
+        # 🔧 USAR followup em vez de response
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    # 🔥 NOVAS VERIFICAÇÕES POR TIPO 🔥
+    member = interaction.user  # Membro do Discord que executou o comando
+    
+    if tipo_valor == "PATROCIONADOR":
+        with open(ARQUIVO_PATROCINADOR, 'r', encoding='utf-8') as f:
+            patrocinadores_pendentes = json.load(f)
+
+        if not verificar_tag_discord(member, "patrocinador"):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Patrocinador",
+                description="Iiiih amigo, você não tem TAG de patrocinador, procure um **BRAÇO DIREITO**, ou o **Líder da guild** para saber mais sobre ser um patrocinador.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Patrocinador' podem usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+        if usuario_comando not in patrocinadores_pendentes:
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Patrocinador",
+                description="Vissh você já fez a DG beneficiente essa semana, tente usar a sua pontuação ou espere até a próxima semana.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas patrocinadores que ainda não fizeram a DG dessa semana podem usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    elif tipo_valor == "SORTEIO":
+        if not verificar_sorteio(usuario_comando):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Sorteio",
+                description="Vissh você não ganhou nenhum sorteio atualmente, sinto muito, tente usar a sua pontuação.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas quem ganhou sorteios recentes pode usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    
+    elif tipo_valor == "RECRUTADOR":
+        if not verificar_tag_discord(member, "recrutador"):
+            embed_erro = discord.Embed(
+                title="❌ Acesso Negado - Recrutador",
+                description="Tá tentando usar privilégio que não é pro seu bico né?? Tente ganhar um sorteio ou use seus pontos.",
+                color=0xff0000
+            )
+            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Recrutador' podem usar este tipo.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+    
+    elif tipo_valor == "PONTUAÇÃO":
+        pontos_necessarios = 10
+        pontos_atuais = obter_pontuacao(usuario_comando)
+        
+        if pontos_atuais < pontos_necessarios:
+            embed_erro = discord.Embed(
+                title="❌ Pontos Insuficientes",
+                description=f"**{usuario_comando}**, você não tem pontos suficientes.\n\n"
+                           f"**Necessário para DG beneficiente:** {pontos_necessarios} pontos\n"
+                           f"**Você tem:** {pontos_atuais} pontos",
+                color=0xff0000
+            )
+            embed_erro.add_field(
+                name="💡 Como conseguir pontos:",
+                value="• Participe de DGs como Tank/Healer (+2 pts)\n• Participe de DGs como DPS (+1 pt)\n• Ganhe sorteios da guild",
+                inline=False
+            )
+            embed_erro.set_footer(text="Use /ranking para ver o ranking de pontuação.")
+            # 🔧 USAR followup em vez de response
+            await interaction.followup.send(embed=embed_erro)
+            return
+         
+    membros = [usuario_comando]  # CORRIGIDO: garantir que seja lista
+    if integrantes:
+        for parte in integrantes.split():
+            nome_limpo = await tratar_mention(interaction, parte)
+            membros.append(nome_limpo)
+
+
+    conteudo_em_aberto = {
+        "caller": usuario_comando,  # CORRIGIDO: usar caller_limpo
+        "tipo": tipo_valor,
+        "membros": membros,
+    }
+
+    # Embed inicial
+    icone = icones.get(tipo_valor, "📋")
+    embed = discord.Embed(
+        title=f"📊 PRÉVIA DE PONTUAÇÃO",
+        description=f"{icone} **{tipo.name}**\n\nClique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
+        color=0xffa500
+    )
+    
+    for membro in membros:
+        embed.add_field(
+            name=f"⚔️ {membro}",
+            value="Função: **DPS**",
+            inline=False
+        )
+    
+    view = FuncoesEquipeView(membros, interaction.user)
+    view.interaction = interaction
+    # 🔧 USAR followup em vez de response
+    await interaction.followup.send(embed=embed, view=view)
+    
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- SPLIT DE VALOR ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+@bot.tree.command(name="split", description="Divide um valor entre várias pessoas")
+@app_commands.describe(
+    valor="Valor total (ex: 17M, 500K, 2.5B)",
+    quantidade_de_membros="Número de pessoas para dividir"
+)
+async def split(interaction: discord.Interaction, valor: str, quantidade_de_membros: int):
+    try:
+        # Converter valor abreviado para número
+        valor_original = valor  # Guardar o valor original para exibir
+        valor_numerico = converter_valor_abreviado(valor)
+        
+        if quantidade_de_membros <= 0:
+            raise ValueError("A quantidade deve ser maior que zero.")
+
+        valor_por_pessoa = valor_numerico / quantidade_de_membros
+
+        # Formatar valores para exibição
+        valor_formatado = formatar_valor_abreviado(valor_numerico)
+        valor_pessoa_formatado = formatar_valor_abreviado(valor_por_pessoa)
+
+        embed = discord.Embed(
+            title=f"💰 SPLIT DE VALOR",
+            description=f"💰 **{valor_formatado}** dividido por **{quantidade_de_membros}** pessoas",
+            color=0xffa500  # Laranja para prévia
+        )
+
+        # Campo com resumo
+        embed.add_field(
+            name="Resumo",
+            value=f"**Valor por pessoa**: {valor_pessoa_formatado}",
+            inline=False
+        )
+
+        embed.set_footer(text="Valores em formato abreviado (K=mil, M=milhão, B=bilhão) cada pessoa deve receber o valor indicado")
+        
+        await interaction.response.send_message(embed=embed)
+
+    except ValueError as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Erro ao processar o comando: {e}\n\n💡 **Formatos aceitos:**\n`17M` (17 milhões)\n`500K` (500 mil)\n`2.5B` (2.5 bilhões)\n`1000` (número normal)",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro)
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- MOSTRAR INFORMAÇÕES  ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="guilda", description="Mostra informações da guilda LOUCOS POR PVE")
+async def guilda(interaction: discord.Interaction):
+    embed_loading = discord.Embed(
+        title="🔍 Buscando informações da guilda...",
+        description="Consultando API do Albion Online",
+        color=0xffa500
+    )
+    await interaction.response.send_message(embed=embed_loading)
+    
+    try:
+        guilda_info = await buscar_guilda_por_id(GUILD_ID)
+        if not guilda_info:
+            embed_erro = discord.Embed(
+                title="❌ Erro ao carregar dados",
+                description="Não foi possível carregar as informações da guilda",
+                color=0xff0000
+            )
+            await interaction.edit_original_response(embed=embed_erro)
+            return
+
+        embed = discord.Embed(
+            title="🏰 LOUCOS POR PVE",
+            description=f"Informações da guilda",
+            color=0x00ff00
+        )
+        embed.add_field(
+            name="📋 Informações Gerais",
+            value=f"**Nome:** {guilda_info['name']}\n"
+                  f"**Fundador:** {guilda_info['founder']}\n"
+                  f"**Membros:** {guilda_info['member_count']}\n"
+                  f"**Aliança:** {guilda_info['alliance_tag'] or 'Nenhuma'}",
+            inline=False
+        )
+        kill_fame_formatado = formatar_valor_abreviado(guilda_info['kill_fame'])
+        death_fame_formatado = formatar_valor_abreviado(guilda_info['death_fame'])
+        embed.add_field(
+            name="⚔️ Estatísticas de Combate",
+            value=f"**Kill Fame:** {kill_fame_formatado}\n"
+                  f"**Death Fame:** {death_fame_formatado}",
+            inline=True
+        )
+        founded_date = guilda_info['founded'][:10]
+        embed.add_field(
+            name="📅 Fundação",
+            value=founded_date,
+            inline=True
+        )
+        embed.set_footer(text="Dados da API oficial do Albion Online")
+        await interaction.edit_original_response(embed=embed)
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro interno",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.edit_original_response(embed=embed_erro)
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- LISTAR MEMBROS DA GUILDA  ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="membros", description="Lista todos os membros da guilda LOUCOS POR PVE")
+async def membros(interaction: discord.Interaction):
+    embed_loading = discord.Embed(
+        title="🔍 Buscando membros da guilda...",
+        description="Consultando API do Albion Online",
+        color=0xffa500
+    )
+    await interaction.response.send_message(embed=embed_loading)
+
+    try:
+        guilda_info = await buscar_guilda_por_id(GUILD_ID)
+        if not guilda_info:
+            embed_erro = discord.Embed(
+                title="❌ Erro ao carregar dados",
+                description="Não foi possível carregar as informações da guilda",
+                color=0xff0000
+            )
+            await interaction.edit_original_response(embed=embed_erro)
+            return  # <-- IMPORTANTE
+
+        membros = await buscar_membros_guilda(guilda_info)
+        if not membros:
+            embed_erro = discord.Embed(
+                title="❌ Erro ao buscar membros",
+                description="Não foi possível carregar os membros da guilda. A API pode estar indisponível.",
+                color=0xff0000
+            )
+            await interaction.edit_original_response(embed=embed_erro)
+            return  # <-- IMPORTANTE
+
+        # Montar embed com a lista de membros
+        embed = discord.Embed(
+            title="👥 MEMBROS DA GUILDA",
+            description=f"Total: {len(membros)} membros",
+            color=0x00ff00
+        )
+
+        nomes = [m.get('Name', 'Desconhecido') for m in membros]
+        nomes.sort()
+        # Discord limita fields a 1024 caracteres, então pode ser necessário dividir em partes
+        chunk_size = 40
+        for i in range(0, len(nomes), chunk_size):
+            chunk = nomes[i:i+chunk_size]
+            embed.add_field(
+                name=f"Membros {i+1} - {i+len(chunk)}",
+                value="\n".join(chunk),
+                inline=False
+            )
+
+        embed.set_footer(text="Dados da API oficial do Albion Online")
+        await interaction.edit_original_response(embed=embed)
+
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro interno",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.edit_original_response(embed=embed_erro)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- MOSTRAR FAMA DE MEMBRO DA GUILDA ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.command()
+async def membro(ctx, *, nome_membro):
+    """Mostra informações detalhadas de um membro da guilda"""
+    
+    # Embed de carregamento
+    embed_loading = discord.Embed(
+        title="🔍 Buscando informações do membro...",
+        description=f"Procurando por: **{nome_membro}**",
+        color=0xffa500
+    )
+    loading_msg = await ctx.send(embed=embed_loading)
+    
+    try:
+        # Buscar informações do membro
+        membro_info = await buscar_membro_por_nome(nome_membro)
+        
+        if not membro_info:
+            embed_erro = discord.Embed(
+                title="❌ Membro não encontrado",
+                description=f"Não foi possível encontrar o membro **{nome_membro}** na guilda LOUCOS POR PVE",
+                color=0xff0000
+            )
+            embed_erro.add_field(
+                name="💡 Dica",
+                value="Verifique se o nome está correto (sem espaços extras) ou use !membros para ver a lista completa",
+                inline=False
+            )
+            await loading_msg.edit(embed=embed_erro)
+            return
+        
+        # Extrair dados do membro
+        nome = membro_info.get('Name', 'Desconhecido')
+        kill_fame = membro_info.get('KillFame', 0)
+        death_fame = membro_info.get('DeathFame', 0)
+        fame_ratio = membro_info.get('FameRatio', 0)
+        
+        # Estatísticas de PvE
+        lifetime_stats = membro_info.get('LifetimeStatistics', {})
+        pve_stats = lifetime_stats.get('PvE', {})
+        pve_total = pve_stats.get('Total', 0)
+        
+        # Estatísticas de coleta
+        gathering_stats = lifetime_stats.get('Gathering', {})
+        fiber_total = gathering_stats.get('Fiber', {}).get('Total', 0)
+        hide_total = gathering_stats.get('Hide', {}).get('Total', 0)
+        ore_total = gathering_stats.get('Ore', {}).get('Total', 0)
+        rock_total = gathering_stats.get('Rock', {}).get('Total', 0)
+        wood_total = gathering_stats.get('Wood', {}).get('Total', 0)
+        gathering_total = gathering_stats.get('All', {}).get('Total', 0)
+        
+        # Outras estatísticas
+        crafting_total = lifetime_stats.get('Crafting', {}).get('Total', 0)
+        fishing_fame = lifetime_stats.get('FishingFame', 0)
+        farming_fame = lifetime_stats.get('FarmingFame', 0)
+        
+        # Criar embed com informações do membro
+        embed = discord.Embed(
+            title=f"👤 {nome}",
+            description="📊 **Estatísticas Detalhadas**",
+            color=0x00ff00
+        )
+        
+        # Informações de PvP
+        embed.add_field(
+            name="⚔️ **PvP Stats**",
+            value=f"**Kill Fame:** {formatar_valor_abreviado(kill_fame)}\n"
+                  f"**Death Fame:** {formatar_valor_abreviado(death_fame)}\n"
+                  f"**Fame Ratio:** {fame_ratio:.2f}",
+            inline=True
+        )
+        
+        # Informações de PvE
+        embed.add_field(
+            name="🏰 **PvE Stats**",
+            value=f"**Total Fame:** {formatar_valor_abreviado(pve_total)}\n"
+                  f"**Crafting:** {formatar_valor_abreviado(crafting_total)}\n"
+                  f"**Fishing:** {formatar_valor_abreviado(fishing_fame)}\n"
+                  f"**Farming:** {formatar_valor_abreviado(farming_fame)}",
+            inline=True
+        )
+        
+        # Adicionar campo vazio para quebra de linha
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        
+        # Estatísticas de coleta
+        embed.add_field(
+            name="🌿 **Gathering Stats**",
+            value=f"**Total Gathering:** {formatar_valor_abreviado(gathering_total)}\n"
+                  f"🌾 **Fiber:** {formatar_valor_abreviado(fiber_total)}\n"
+                  f"🦌 **Hide:** {formatar_valor_abreviado(hide_total)}\n"
+                  f"⛏️ **Ore:** {formatar_valor_abreviado(ore_total)}\n"
+                  f"🪨 **Rock:** {formatar_valor_abreviado(rock_total)}\n"
+                  f"🪵 **Wood:** {formatar_valor_abreviado(wood_total)}",
+            inline=True
+        )
+        
+        # Informações da guilda
+        embed.add_field(
+            name="🏰 **Guild Info**",
+            value=f"**Guilda:** {membro_info.get('GuildName', 'N/A')}\n"
+                  f"**Aliança:** {membro_info.get('AllianceName', 'Nenhuma')}",
+            inline=True
+        )
+
+        embed.set_footer(text="Dados da API oficial do Albion Online. Desenvolvido por: @Klartz")
+
+        await loading_msg.edit(embed=embed)
+        
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro interno",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await loading_msg.edit(embed=embed_erro)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;# ------------------------------------- INFORMAÇÕES DO BOT ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+@bot.command()
+async def botinfo(ctx):
+
+    embed = discord.Embed(
+        title="🤖 Informações do Bot",
+        description="Detalhes sobre o bot de pontuação",
+        color=0x00ff00  # Verde
+    )
+
+    embed.add_field(name="Nome", value=bot.user.name, inline=True)
+    embed.add_field(name="ID", value=bot.user.id, inline=True)
+    embed.add_field(name="Criador", value="Lucas (Klartz)", inline=True)
+    embed.add_field(name="Comandos Disponíveis", value="!pontuacao, !conteudo, !finalizar, !split, !guilda, !membros, !membro, !botinfo, !comandos", inline=False)
+    embed.add_field(name="Versão", value="1.0.0", inline=True)
+    embed.set_footer(text="Para mais comandos, use: !comandos. Desenvolvido por: Lucas (Klartz)")
+    
+    await ctx.send(embed=embed)
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- ADCIONAR PONTOS ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+@bot.tree.command(name="addpontos", description="Adiciona pontos a um membro")
+@app_commands.describe(
+    membro="Nome do membro ou @mention",
+    pontos="Quantidade de pontos para adicionar"
+)
+async def addpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    try:
+        # 🔧 TRATAR MENTION
+        membro_limpo = await tratar_mention(interaction, membro)
+        nova_pontuacao = adicionar_pontos(membro_limpo, pontos)
+        
+        if nova_pontuacao is not None:
+            embed = discord.Embed(
+                title="✅ Pontos Adicionados",
+                description=f"**{pontos}** pontos adicionados para **{membro_limpo}**",
+                color=0x00ff00
+            )
+            embed.add_field(
+                name="📊 Pontuação Atual",
+                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
+                inline=False
+            )
+            
+            # Se foi um mention, mostrar info adicional
+            if membro != membro_limpo:
+                embed.add_field(
+                    name="🔍 Conversão",
+                    value=f"Mention {membro} → **{membro_limpo}**",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)
+        else:
+            embed_erro = discord.Embed(
+                title="❌ Erro",
+                description="Não foi possível salvar os pontos.",
+                color=0xff0000
+            )
+            await interaction.followup.send(embed=embed_erro)
+            
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- CONSULTAR POONTOS DO MEMBRO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+
+@bot.tree.command(name="consultar_pontuação", description="Consulta a pontuação de um membro")
+@app_commands.describe(membro="Nome do membro para consultar")
+async def pontos(interaction: discord.Interaction, membro: str):
+
+    await interaction.response.defer()
+
+    membro_limpo = await tratar_mention(interaction, membro)
+    pontuacao_atual = obter_pontuacao(membro_limpo)
+
+    embed = discord.Embed(
+        title="📊 Consulta de Pontuação",
+        color=0x0099ff
+    )
+    
+    nome_exibicao = membro_limpo
+
+    if pontuacao_atual > 0:
+        embed.add_field(
+            name=f"🏆 {nome_exibicao}",
+            value=f"**{pontuacao_atual}** pontos",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name=f"❌ {nome_exibicao}",
+            value="Nenhum ponto registrado",
+            inline=False
+        )
+    await interaction.followup.send(embed=embed)
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- RANKING DE PONTUAÇÃO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+
+@bot.tree.command(name="ranking", description="Mostra o ranking completo de pontuação")
+async def ranking(interaction: discord.Interaction):
+    ranking_completo = obter_ranking()
+    
+    if not ranking_completo:
+        embed = discord.Embed(
+            title="📊 Ranking de Pontuação",
+            description="Nenhum membro possui pontos ainda.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title="🏆 RANKING DE PONTUAÇÃO - LOUCOS POR PVE",
+        description="Top membros por pontuação",
+        color=0xffd700
+    )
+    
+    # Mostrar top 10 (ou todos se menos de 10)
+    top_membros = ranking_completo[:10]
+    
+    ranking_texto = ""
+    for i, (nome, pontos) in enumerate(top_membros, 1):
+        if i == 1:
+            emoji = "🥇"
+        elif i == 2:
+            emoji = "🥈"
+        elif i == 3:
+            emoji = "🥉"
+        else:
+            emoji = f"{i}."
+            
+        ranking_texto += f"{emoji} **{nome}** - {pontos} pts\n"
+    
+    embed.add_field(
+        name="🏆 Top Membros",
+        value=ranking_texto,
+        inline=False
+    )
+    
+    if len(ranking_completo) > 10:
+        embed.set_footer(text=f"Mostrando top 10 de {len(ranking_completo)} membros")
+    else:
+        embed.set_footer(text=f"Total: {len(ranking_completo)} membros")
+    
+    await interaction.response.send_message(embed=embed)
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- REMOVER PONTOS ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+@bot.tree.command(name="removerpontos", description="Remove pontos de um membro")
+@app_commands.describe(
+    membro="Nome do membro ou @mention",
+    pontos="Quantidade de pontos para remover"
+)
+async def removerpontos(interaction: discord.Interaction, membro: str, pontos: int):
+    # 🚀 ADICIONAR DEFER
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # USAR FOLLOWUP
+        return
+
+    try:
+        membro_limpo = await tratar_mention(interaction, membro)
+        nova_pontuacao = adicionar_pontos(membro_limpo, -pontos)
+        
+        if nova_pontuacao is not None:
+            embed = discord.Embed(
+                title="✅ Pontos Removidos",
+                description=f"**{pontos}** pontos removidos de **{membro_limpo}**",
+                color=0xff9900
+            )
+            embed.add_field(
+                name="📊 Pontuação Atual",
+                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
+                inline=False
+            )
+            
+            if membro != membro_limpo:
+                embed.add_field(
+                    name="🔍 Conversão",
+                    value=f"Mention {membro} → **{membro_limpo}**",
+                    inline=False
+                )
+            
+            await interaction.followup.send(embed=embed)  # USAR FOLLOWUP
+        else:
+            embed_erro = discord.Embed(
+                title="❌ Erro",
+                description="Não foi possível remover os pontos.",
+                color=0xff0000
+            )
+            await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
+            
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
+
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- ADICIONAR SORTEIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+
+@bot.tree.command(name="addsorteio", description="Adiciona uma pessoa à lista de sorteios")
+@app_commands.describe(nome="Nome da pessoa ou @mention que ganhou o sorteio")
+async def addsorteio(interaction: discord.Interaction, nome: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar a lista de sorteios.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
+        return
+    
+    try:
+        # 🔧 TRATAR MENTION
+        nome_limpo = await tratar_mention(interaction, nome)
+        
+        adicionar_sorteio(nome_limpo)
+        embed = discord.Embed(
+            title="✅ Sorteio Adicionado",
+            description=f"**{nome_limpo}** foi adicionado à lista de sorteios.",
+            color=0x00ff00
+        )
+        
+        # Se foi um mention, mostrar info adicional
+        if nome != nome_limpo:
+            embed.add_field(
+                name="🔍 Conversão",
+                value=f"Mention {nome} → **{nome_limpo}**",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
+        
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
+
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- REMOVER SORTEIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+@bot.tree.command(name="removesorteio", description="Remove uma pessoa da lista de sorteios")
+@app_commands.describe(nome="Nome da pessoa ou @mention para remover da lista")
+async def removesorteio(interaction: discord.Interaction, nome: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await interaction.response.defer()
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas admins podem gerenciar a lista de sorteios.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
+        return
+    
+    try:
+        # 🔧 TRATAR MENTION
+        nome_limpo = await tratar_mention(interaction, nome)
+        
+        if remover_sorteio(nome_limpo):
+            embed = discord.Embed(
+                title="✅ Sorteio Removido",
+                description=f"**{nome_limpo}** foi removido da lista de sorteios.",
+                color=0x00ff00
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ Não Encontrado",
+                description=f"**{nome_limpo}** não estava na lista de sorteios.",
+                color=0xff9900
+            )
+        
+        # Se foi um mention, mostrar info adicional
+        if nome != nome_limpo:
+            embed.add_field(
+                name="🔍 Conversão",
+                value=f"Mention {nome} → **{nome_limpo}**",
+                inline=False
+            )
+        
+        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
+        
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- LISTAR SORTEIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="listsorteios", description="Lista todas as pessoas que ganharam sorteios")
+async def listsorteios(interaction: discord.Interaction):
+    sorteios = carregar_sorteios()
+    
+    if not sorteios:
+        embed = discord.Embed(
+            title="📋 Lista de Sorteios",
+            description="Nenhuma pessoa ganhou sorteios recentemente.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title="🎲 Lista de Sorteios Ativos",
+        description="Pessoas que ganharam sorteios e podem puxar DGs:",
+        color=0xffd700
+    )
+    
+    sorteios_texto = "\n".join([f"🎯 **{nome}**" for nome in sorteios])
+    embed.add_field(
+        name="🏆 Ganhadores Atuais",
+        value=sorteios_texto,
+        inline=False
+    )
+    
+    embed.set_footer(text=f"Total: {len(sorteios)} pessoas")
+    await interaction.response.send_message(embed=embed)
+    
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- LISTAR MEMBROS PONTUACAO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="listapontuacao", description="Mostra a lista completa de todos os membros e seus pontos")
+async def listapontuacao(interaction: discord.Interaction):
+    pontuacao = obter_toda_pontuacao()
+    if not pontuacao:
+        embed = discord.Embed(
+            title="📋 Lista de Pontuação",
+            description="Nenhum membro possui pontos ainda.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+
+    ranking = sorted(pontuacao.items(), key=lambda x: x[1], reverse=True)
+    max_chars = 1000  # Limite seguro por field
+    chunk = []
+    chunk_len = 0
+    embeds = []
+    total = len(ranking)
+    for idx, (nome, pontos) in enumerate(ranking, 1):
+        linha = f"{idx}. **{nome}** - {pontos} pts\n"
+        if chunk_len + len(linha) > max_chars and chunk:
+            embeds.append((chunk, idx - len(chunk), idx - 1))
+            chunk = []
+            chunk_len = 0
+        chunk.append(linha)
+        chunk_len += len(linha)
+    if chunk:
+        embeds.append((chunk, total - len(chunk) + 1, total))
+
+    # Enviar a primeira resposta
+    first_embed = discord.Embed(
+        title="🏆 LISTA COMPLETA DE PONTUAÇÃO",
+        description=f"Total de membros: {total}",
+        color=0x00ff00
+    )
+    chunk, start, end = embeds[0]
+    first_embed.add_field(
+        name=f"Membros {start} - {end}",
+        value="".join(chunk),
+        inline=False
+    )
+    first_embed.set_footer(text="Use /ranking para ver o top 10.")
+    await interaction.response.send_message(embed=first_embed)
+
+    # Enviar o resto como followup
+    for chunk, start, end in embeds[1:]:
+        embed = discord.Embed(
+            title="🏆 LISTA COMPLETA DE PONTUAÇÃO (cont.)",
+            description=None,
+            color=0x00ff00
+        )
+        embed.add_field(
+            name=f"Membros {start} - {end}",
+            value="".join(chunk),
+            inline=False
+        )
+        await interaction.followup.send(embed=embed)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- Gera arquivo XLSX ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+# Comando para gerar backup em CSV
+@bot.command()
+async def backup(ctx):
+    """Gera um arquivo xlsx com membros e pontuação."""
+    pontuacao = carregar_pontuacao()
+    if not pontuacao:
+        await ctx.send("Nenhuma pontuação encontrada para backup.")
+        return
+
+    caminho_xlsx = "backup_pontuacao.xlsx"
+    membros = list(pontuacao.items())
+    membros.sort(key=lambda x: x[0].lower())
+
+    # XLSX formatado
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Pontuação"
+    ws.append(["membros", "pontuação"])
+    # Formatação do cabeçalho
+    header_fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
+    header_font = Font(bold=True, color="000000")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    # Adicionar dados
+    for membro, pontos in membros:
+        ws.append([membro, pontos])
+    # Ajustar largura das colunas
+    ws.column_dimensions['A'].width = 40
+    ws.column_dimensions['B'].width = 15
+    # Alinhar colunas
+    for row in ws.iter_rows(min_row=2, min_col=1, max_col=2, max_row=ws.max_row):
+        row[0].alignment = Alignment(horizontal="left")
+        row[1].alignment = Alignment(horizontal="center")
+    wb.save(caminho_xlsx)
+
+    await ctx.send(file=discord.File(caminho_xlsx), content="Backup Excel gerado com sucesso!")
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- CORRIGE NOMES NO DB ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+# Corrige nomes do DB para o formato com tag do Discord
+@bot.command()
+async def conserta_db(ctx):
+    guild = ctx.guild
+    if not guild:
+        await ctx.send("Comando só pode ser usado em servidor.")
+        return
+
+    role_tag = "Louco por PVE"
+    pontuacao = carregar_pontuacao()
+    membros_atualizados = 0
+    nomes_para_atualizar = []
+    
+    # async for member in guild.fetch_members(limit=None):
+    #     nome_original = member.display_name
+    #     nome_limpo = re.sub(r"^\s*\[[^\]]+\]\s*", "", nome_original)
+    #     print(f"Nome limpo: {nome_limpo}")
+
+    async for member in guild.fetch_members(limit=None):
+        if any(role_tag.lower() in r.name.lower() for r in member.roles):
+            # Procura por qualquer nome no JSON que contenha o display_name do membro
+            for nome_json in list(pontuacao.keys()):
+
+                nome_original = member.display_name
+                nome_limpo = re.sub(r"^\[[^\]]+\]\s*", "", nome_original)
+                print(f"Nome limpo: {nome_limpo}")
+                # Se o nome no JSON contém o display_name OU começa com uma tag e termina com o display_name
+                print(f"[DEBUG] Verificando {nome_json} contra {member.display_name}")
+
+                if nome_json == nome_limpo:
+                    if nome_json != member.display_name:
+                        pontuacao[member.display_name] = pontuacao.pop(nome_json)
+                        membros_atualizados += 1
+
+    salvar_pontuacao(pontuacao)
+    await ctx.send(f"Conserto concluído! {membros_atualizados} nomes atualizados no banco de dados.")
+
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- TROCA DE PONTOS ENTRE MEMBROS ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+@bot.tree.command(name="troca_de_pontos", description="Transfere pontos para outro membro da guilda")
+@app_commands.describe(
+    destinatario="Nome do destinatário ou @mention",
+    valor="Quantidade de pontos a transferir"
+)
+async def troca(interaction: discord.Interaction, destinatario: str, valor: int):
+    await interaction.response.defer()
+    remetente_nome = interaction.user.display_name
+    # Validar valor
+    if valor <= 0:
+        await interaction.followup.send("❌ O valor deve ser maior que zero.", ephemeral=True)
+        return
+
+    # Tratar mention do destinatário
+    destinatario_limpo = await tratar_mention(interaction, destinatario)
+
+    # Conferir se destinatário está na guilda
+    membro_destino = discord.utils.find(lambda m: m.display_name.lower() == destinatario_limpo.lower(), interaction.guild.members)
+    if not membro_destino:
+        await interaction.followup.send(f"❌ O destinatário **{destinatario_limpo}** não foi encontrado na guilda.", ephemeral=True)
+        return
+
+    # Conferir se remetente tem saldo suficiente
+    saldo_remetente = obter_pontuacao(remetente_nome)
+    if saldo_remetente < valor:
+        await interaction.followup.send(f"❌ Você não tem pontos suficientes para transferir.\nSeu saldo: {saldo_remetente}", ephemeral=True)
+        return
+
+    # Transferir pontos
+    adicionar_pontos(remetente_nome, -valor)
+    adicionar_pontos(destinatario_limpo, valor)
+
+    embed = discord.Embed(
+        title="🔄 Troca de Pontos Realizada",
+        description=f"**{remetente_nome}** transferiu **{valor}** pontos para **{destinatario_limpo}**.",
+        color=0x00bfff
+    )
+    embed.add_field(name="Saldo do remetente", value=f"{remetente_nome}: {obter_pontuacao(remetente_nome)} pontos", inline=False)
+    embed.add_field(name="Saldo do destinatário", value=f"{destinatario_limpo}: {obter_pontuacao(destinatario_limpo)} pontos", inline=False)
+    await interaction.followup.send(embed=embed)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# -------------------------------------- FUNÇÕES AUXILIARES ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
+# ;
 
 
 async def tratar_mention(interaction: discord.Interaction, nome_ou_mention: str):
@@ -86,6 +1493,17 @@ def carregar_sorteios():
             return []
     return []
 
+def carregar_patrocinadores():
+    """Carrega a lista de patrocinadores do arquivo JSON"""
+    if os.path.exists(ARQUIVO_PATROCINADOR):
+        try:
+            with open(ARQUIVO_PATROCINADOR, 'r', encoding='utf-8') as arquivo:
+                return json.load(arquivo)
+        except (json.JSONDecodeError, FileNotFoundError):
+            print("❌ Erro ao carregar arquivo de patrocinadores. Criando novo arquivo...")
+            return []
+    return []
+
 def salvar_sorteios(lista_sorteios):
     """Salva a lista de sorteios no arquivo JSON"""
     try:
@@ -96,6 +1514,16 @@ def salvar_sorteios(lista_sorteios):
         print(f"❌ Erro ao salvar sorteios: {e}")
         return False
 
+def salvar_patrocinadores(lista_patrocinadores):
+    """Salva a lista de patrocinadores no arquivo JSON"""
+    try:
+        with open(ARQUIVO_PATROCINADOR, 'w', encoding='utf-8') as arquivo:
+            json.dump(lista_patrocinadores, arquivo, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao salvar patrocinadores: {e}")
+        return False
+    
 def verificar_tag_discord(member, tag_nome):
     """Verifica se o membro tem uma TAG específica no Discord"""
     if not member or not member.roles:
@@ -121,6 +1549,14 @@ def remover_sorteio(nome_pessoa):
     if nome_pessoa in sorteios:
         sorteios.remove(nome_pessoa)
         salvar_sorteios(sorteios)
+        return True
+    return False
+def remover_patrocinios(nome_pessoa):
+    """Remove uma pessoa da lista de patrocinadores"""
+    patrocinadores = carregar_patrocinadores()
+    if nome_pessoa in patrocinadores:
+        patrocinadores.remove(nome_pessoa)
+        salvar_patrocinadores(patrocinadores)
         return True
     return False
 
@@ -202,6 +1638,77 @@ def resetar_pontuacao():
     """Reseta toda a pontuação (cuidado!)"""
     return salvar_pontuacao({})
 
+# Função para retornar toda a lista de pontuação dos membros
+def obter_toda_pontuacao():
+    """Retorna o dicionário completo de pontuação dos membros."""
+    return carregar_pontuacao()
+
+
+# Função para atualizar patrocinadores
+async def atualizar_patrocinadores():
+    print("[TAREFA] Atualizando lista de patrocinadores...")
+    for guild in bot.guilds:
+        patrocinadores = []
+        async for member in guild.fetch_members(limit=None):
+            if any('patrocinador' in r.name.lower() for r in member.roles):
+                # Nome limpo sem tag
+                nome_original = member.display_name
+                patrocinadores.append(nome_original)
+        # Salva no JSON
+        try:
+            async with aiofiles.open(ARQUIVO_PATROCINADOR, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(patrocinadores, ensure_ascii=False, indent=2))
+            print(f"[TAREFA] {len(patrocinadores)} patrocinadores salvos em {ARQUIVO_PATROCINADOR}")
+        except Exception as e:
+            print(f"[TAREFA] Erro ao salvar patrocinadores: {e}")
+
+# Função de agendamento semanal
+async def agendar_atualizacao_patrocinadores():
+    tz = pytz.timezone('America/Sao_Paulo')
+    while True:
+        now = datetime.datetime.now(tz)
+        # Quarta-feira = 2 (segunda=0)
+        dias_ate_quarta = (6 - now.weekday()) % 7
+        proxima_quarta = now + datetime.timedelta(days=dias_ate_quarta)
+        proxima_execucao = proxima_quarta.replace(hour=0, minute=0, second=0, microsecond=0)
+        if proxima_execucao <= now:
+            proxima_execucao += datetime.timedelta(days=7)
+        segundos_ate_execucao = (proxima_execucao - now).total_seconds()
+        # Enviar mensagem no canal de comunicados
+        horas, resto = divmod(int(segundos_ate_execucao), 3600)
+        minutos, _ = divmod(resto, 60)
+        tempo_str = f"{horas}h {minutos}min" if horas > 0 else f"{minutos}min"
+        # Carregar patrocinadores que ainda não fizeram a DG
+        try:
+            with open(ARQUIVO_PATROCINADOR, 'r', encoding='utf-8') as f:
+                patrocinadores_pendentes = json.load(f)
+        except Exception as e:
+            print(f"[TAREFA] Erro ao ler patrocinadores.json: {e}")
+            patrocinadores_pendentes = []
+
+        if patrocinadores_pendentes:
+            lista_pendentes = '\n'.join(f"• {nome}" for nome in patrocinadores_pendentes)
+            texto_pendentes = f"\n\n**Patrocinadores que ainda não fizeram a DG dessa semana:**\n{lista_pendentes}"
+            texto_pendentes += "\n\n*Lembrete: Se não fizer a DG até o horário, perderá a chance dessa semana!*"
+        else:
+            texto_pendentes = "\n\nTodos os patrocinadores já fizeram a DG beneficente!"
+
+        mensagem = (
+            f"📢 **Atenção Patrocinadores!**\n\n"
+            f"A recarga dos patrocinadores será em: **{tempo_str}** (às {proxima_execucao.strftime('%d/%m %H:%M')})\n"
+            f"Se não fizer a DG beneficente até esse horário, perderá a chance de participar!"
+            f"{texto_pendentes}"
+        )
+        for guild in bot.guilds:
+            canal = discord.utils.get(guild.text_channels, name="📢🔸comunicados")
+            if canal:
+                try:
+                    await canal.send(mensagem)
+                except Exception as e:
+                    print(f"[TAREFA] Erro ao enviar mensagem no canal de comunicados: {e}")
+        print(f"[TAREFA] Próxima atualização de patrocinadores em {proxima_execucao} (em {segundos_ate_execucao:.0f} segundos)")
+        await asyncio.sleep(segundos_ate_execucao)
+        await atualizar_patrocinadores()
 
 # Guardará temporariamente os dados antes de finalizar
 conteudo_em_aberto = None
@@ -245,6 +1752,7 @@ class FinalizarButton(discord.ui.Button):
         super().__init__(label="✅ Finalizar", style=discord.ButtonStyle.success, row=4)
 
     async def callback(self, interaction: discord.Interaction):
+        resumo_texto = ""
         global conteudo_em_aberto
 
         if interaction.user != self.view.interaction_user:
@@ -272,10 +1780,16 @@ class FinalizarButton(discord.ui.Button):
         # NOVO: Verificar se o tipo é "PONTUAÇÃO" e penalizar o caller
         if tipo_conteudo == "PONTUAÇÃO":
             remover_pontos(caller_nome, 10)  # Caller perde 10 pontos
-            penalidade_texto = f"**Caller:** 👑 {caller_nome} *(perdeu 10 pontos por ser tipo PONTUAÇÃO)*"
+            penalidade_texto = f"**Caller: ** 👑 {caller_nome}  ⛔10 pontos (PONTUAÇÃO)"
         else:
-            penalidade_texto = f"**Caller:** 👑 {caller_nome} *(não recebe pontos)*"
+            penalidade_texto = f"**Caller: ** 👑 {caller_nome} (não recebe pontos)"
 
+        if tipo_conteudo == "SORTEIO":
+            remover_sorteio(caller_nome)  # Remover o caller da lista de sorteios
+            penalidade_texto += " | Sorteio removido da lista. você não pode ser soteado novamente em 3 dias."
+        if tipo_conteudo == "PATROCIONADOR":
+            remover_patrocinios(caller_nome)  # Remover o caller da lista de patrocinadores
+            penalidade_texto += " | Patrocínio removido da lista. recarga na proxima semana!."
         # Criar embed final formatado
         embed_final = discord.Embed(
             title="✅ DG BENEFICIENTE FINALIZADA",
@@ -321,15 +1835,11 @@ class FinalizarButton(discord.ui.Button):
             inline=False
         )
 
-        # Resumo
-        total_pontos = sum(info["pontos"] for info in pontuacao.values())
-        total_participantes = len(pontuacao)  # Não conta o caller
-        resumo_texto = f"**Total de pontos distribuídos:** {total_pontos}\n"
-        resumo_texto += f"**Participantes que receberam pontos:** {total_participantes}\n"
         resumo_texto += f"**Tank/Healer:** 2 pts cada | **DPS:** 1 pt cada\n"
         
         if tipo_conteudo == "PONTUAÇÃO":
-            resumo_texto += f"**Caller:** Perdeu 10 pontos (tipo PONTUAÇÃO) 📉"
+            resumo_texto += f"**Caller:** ⛔10 pontos (tipo PONTUAÇÃO) 📉"
+            resumo_texto += "\n*pontuação atual:* " + str(obter_pontuacao(caller_nome)) + " pts"
         else:
             resumo_texto += f"**Caller:** Não recebe pontos"
         
@@ -481,7 +1991,7 @@ def formatar_valor_abreviado(valor):
 async def buscar_guilda_por_nome(nome_guilda):
     """Busca informações da guilda LOUCOS POR PVE usando o ID fixo"""
     # Se for a guilda LOUCOS POR PVE, usar o ID fixo
-    if nome_guilda.lower() in ["LOUCOS POR PVE", "paladinos"]:
+    if nome_guilda.lower() == "loucos por pve":
         return await buscar_guilda_por_id(GUILD_ID)
     
     # Para outras guildas, tentar buscar na API oficial
@@ -560,897 +2070,6 @@ async def buscar_membro_por_nome(nome_membro):
         except Exception as e:
             print(f"Erro ao buscar membro: {e}")
             return None
-
-# Intents (necessárias para ver mensagens)
-intents = discord.Intents.default() # Habilita intents padrão
-intents.message_content = True # Habilita o acesso ao conteúdo das mensagens
-
-# Criação do bot
-bot = commands.Bot(command_prefix='!', intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f'✅ Bot conectado como {bot.user}')
-    try:
-        synced = await bot.tree.sync()
-        print(f"🔗 {len(synced)} comandos sincronizados (Slash Commands).")
-    except Exception as e:
-        print(f"❌ Erro ao sincronizar comandos: {e}")
-
-@bot.tree.command(name="recompensas", description="Mostra a tabela de recompensas")
-async def recompensas(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="📊 TABELA DE RECOMPENSAS - LOUCOS POR PVE [PVE]",
-        description="Sistema de recompensas para membros da guilda.\n\n",
-        color=0x00ff00
-    )
-
-    for tipo, pontos in PONTOS_POR_CONTEUDO.items():
-        icone = icones.get(tipo, "📋")
-        nome_formatado = f"{icone} {tipo.replace('-', ' ').title()}"
-        
-        # Cada linha é 1 field com nome e pontos
-        embed.add_field(
-            name=nome_formatado,
-            value=f"```ansi\n\u001b[36m{pontos} pts\u001b[0m```",
-            inline=False  # inline=False faz cada linha ocupar toda a largura do embed
-        )
-
-    embed.set_footer(text="Use !conteudo <caller> <tipo> <participantes> para registrar")
-    await interaction.response.send_message(embed=embed)
-
-# cria as opções automaticamente a partir do dicionário
-TIPOS_CHOICES = [
-    app_commands.Choice(name=nome, value=nome)
-    for nome in TIPOS_DE_DG
-]
-
-@bot.tree.command(name="conteudo", description="Registra um novo conteúdo para pontuação")
-@app_commands.describe(
-    caller="De quem foi a DG Beneficiente?",
-    tipo="Tipo da Beneficiente",
-    integrantes="Lista de integrantes separados por espaço"
-)
-@app_commands.choices(tipo=[
-    app_commands.Choice(name=f"{icones.get(key, '📋')} {key.replace('-', ' ').title()}", value=key)
-    for key in TIPOS_DE_DG
-])
-async def conteudo(
-    interaction: discord.Interaction,
-    caller: str,
-    tipo: app_commands.Choice[str],
-    integrantes: str = ""
-):
-    global conteudo_em_aberto
-
-    # 🚀 RESPONDER IMEDIATAMENTE para evitar timeout
-    await interaction.response.defer()
-
-    # NOVA VERIFICAÇÃO CORRIGIDA: Tratar mentions do caller
-    usuario_comando = interaction.user.display_name  # Nome/apelido de quem executou o comando
-    
-    # Limpar o caller se for um mention
-    caller_limpo = caller
-    if caller.startswith("<@") and caller.endswith(">"):
-        user_id = caller.replace("<@", "").replace("!", "").replace(">", "")
-        try:
-            user = interaction.guild.get_member(int(user_id))
-            if not user:
-                user = await interaction.guild.fetch_member(int(user_id))
-            if user:
-                caller_limpo = user.display_name
-        except Exception:
-            # Se não conseguir converter o mention, manter o caller original
-            pass
-    
-    # Verificar se o caller (limpo) corresponde ao usuário que executou o comando
-    if caller_limpo.lower() != usuario_comando.lower():
-        # Aplicar "punição" de -5 pontos (brincadeira, mas funcional)
-        adicionar_pontos(usuario_comando, -5)
-        
-        embed_safado = discord.Embed(
-            title="🚨 EI SAFADO! 🚨",
-            description=f"**{usuario_comando}**, esse não é você! {caller} Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
-            color=0xff0000
-        )
-        embed_safado.add_field(
-            name="😂 Brincadeira...",
-            value="Mas não faz isso de novo, é sério! 😠",
-            inline=False
-        )
-        embed_safado.add_field(
-            name="🔍 Detalhes da verificação:",
-            value=f"**Você:** {usuario_comando}\n**Caller informado:** {caller_limpo}",
-            inline=False
-        )
-        embed_safado.set_footer(text="Sistema anti-trapaça ativado! Use seu próprio nome como caller.")
-        
-        # 🔧 USAR followup em vez de response
-        await interaction.followup.send(embed=embed_safado)
-        return  # Interrompe a execução do comando
-
-    tipo_valor = tipo.value
-    
-    # Verificar se o tipo existe no dicionário
-    if tipo_valor not in TIPOS_DE_DG:
-        embed_erro = discord.Embed(
-            title="❌ Tipo inválido",
-            description=f"O tipo **{tipo_valor}** não foi encontrado no sistema.",
-            color=0xff0000
-        )
-        # 🔧 USAR followup em vez de response
-        await interaction.followup.send(embed=embed_erro, ephemeral=True)
-        return
-
-    # 🔥 NOVAS VERIFICAÇÕES POR TIPO 🔥
-    member = interaction.user  # Membro do Discord que executou o comando
-    
-    if tipo_valor == "PATROCIONADOR":
-        if not verificar_tag_discord(member, "patrocinador"):
-            embed_erro = discord.Embed(
-                title="❌ Acesso Negado - Patrocinador",
-                description="Iiiih amigo, você não tem TAG de patrocinador, procure um **BRAÇO DIREITO**, ou o **Líder da guild** para saber mais sobre ser um patrocinador.",
-                color=0xff0000
-            )
-            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Patrocinador' podem usar este tipo.")
-            # 🔧 USAR followup em vez de response
-            await interaction.followup.send(embed=embed_erro)
-            return
-    
-    elif tipo_valor == "SORTEIO":
-        if not verificar_sorteio(usuario_comando):
-            embed_erro = discord.Embed(
-                title="❌ Acesso Negado - Sorteio",
-                description="Vissh você não ganhou nenhum sorteio atualmente, sinto muito, tente usar a sua pontuação.",
-                color=0xff0000
-            )
-            embed_erro.set_footer(text="💡 Apenas quem ganhou sorteios recentes pode usar este tipo.")
-            # 🔧 USAR followup em vez de response
-            await interaction.followup.send(embed=embed_erro)
-            return
-    
-    elif tipo_valor == "RECRUTADOR":
-        if not verificar_tag_discord(member, "recrutador"):
-            embed_erro = discord.Embed(
-                title="❌ Acesso Negado - Recrutador",
-                description="Tá tentando usar privilégio que não é pro seu bico né?? Tente ganhar um sorteio ou use seus pontos.",
-                color=0xff0000
-            )
-            embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Recrutador' podem usar este tipo.")
-            # 🔧 USAR followup em vez de response
-            await interaction.followup.send(embed=embed_erro)
-            return
-    
-    elif tipo_valor == "PONTUAÇÃO":
-        pontos_necessarios = 10
-        pontos_atuais = obter_pontuacao(usuario_comando)
-        
-        if pontos_atuais < pontos_necessarios:
-            embed_erro = discord.Embed(
-                title="❌ Pontos Insuficientes",
-                description=f"**{usuario_comando}**, você não tem pontos suficientes.\n\n"
-                           f"**Necessário para DG beneficiente:** {pontos_necessarios} pontos\n"
-                           f"**Você tem:** {pontos_atuais} pontos",
-                color=0xff0000
-            )
-            embed_erro.add_field(
-                name="💡 Como conseguir pontos:",
-                value="• Participe de DGs como Tank/Healer (+2 pts)\n• Participe de DGs como DPS (+1 pt)\n• Ganhe sorteios da guild",
-                inline=False
-            )
-            embed_erro.set_footer(text="Use /ranking para ver o ranking de pontuação.")
-            # 🔧 USAR followup em vez de response
-            await interaction.followup.send(embed=embed_erro)
-            return
-
-    # Usar o caller limpo (nome real) em vez do mention
-    membros = [caller_limpo]  # CORRIGIDO: usar caller_limpo
-    if integrantes:
-        for parte in integrantes.split():
-            if parte.startswith("<@") and parte.endswith(">"):
-                user_id = parte.replace("<@", "").replace("!", "").replace(">", "")
-                try:
-                    user = interaction.guild.get_member(int(user_id))
-                    if not user:
-                        user = await interaction.guild.fetch_member(int(user_id))
-                    if user:
-                        membros.append(user.display_name)
-                    else:
-                        membros.append(parte)
-                except Exception:
-                    membros.append(parte)
-            else:
-                membros.append(parte)
-
-    conteudo_em_aberto = {
-        "caller": caller_limpo,  # CORRIGIDO: usar caller_limpo
-        "tipo": tipo_valor,
-        "membros": membros,
-    }
-
-    # Embed inicial
-    icone = icones.get(tipo_valor, "📋")
-    embed = discord.Embed(
-        title=f"📊 PRÉVIA DE PONTUAÇÃO",
-        description=f"{icone} **{tipo.name}**\n\nClique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
-        color=0xffa500
-    )
-    
-    for membro in membros:
-        embed.add_field(
-            name=f"⚔️ {membro}",
-            value="Função: **DPS**",
-            inline=False
-        )
-    
-    view = FuncoesEquipeView(membros, interaction.user)
-    view.interaction = interaction
-    # 🔧 USAR followup em vez de response
-    await interaction.followup.send(embed=embed, view=view)
-    
-# @bot.command()
-# async def finalizar(ctx):
-#     global conteudo_em_aberto
-
-#     if not conteudo_em_aberto:
-#         await ctx.send("❌ Nenhum conteúdo em aberto para finalizar.")
-#         return
-
-#     # Aqui você salvaria no banco de dados real
-#     # Por enquanto só mostra e limpa
-#     tipo_valor = conteudo_em_aberto["tipo"]
-#     membros = conteudo_em_aberto["membros"]
-
-#     await ctx.send(f"✅ Conteúdo **{tipo_valor}** finalizado e registrado para: {', '.join(membros)}")
-
-#     conteudo_em_aberto = None
-
-@bot.tree.command(name="split", description="Divide um valor entre várias pessoas")
-@app_commands.describe(
-    valor="Valor total (ex: 17M, 500K, 2.5B)",
-    quantidade_de_membros="Número de pessoas para dividir"
-)
-async def split(interaction: discord.Interaction, valor: str, quantidade_de_membros: int):
-    try:
-        # Converter valor abreviado para número
-        valor_original = valor  # Guardar o valor original para exibir
-        valor_numerico = converter_valor_abreviado(valor)
-        
-        if quantidade_de_membros <= 0:
-            raise ValueError("A quantidade deve ser maior que zero.")
-
-        valor_por_pessoa = valor_numerico / quantidade_de_membros
-
-        # Formatar valores para exibição
-        valor_formatado = formatar_valor_abreviado(valor_numerico)
-        valor_pessoa_formatado = formatar_valor_abreviado(valor_por_pessoa)
-
-        embed = discord.Embed(
-            title=f"💰 SPLIT DE VALOR",
-            description=f"💰 **{valor_formatado}** dividido por **{quantidade_de_membros}** pessoas",
-            color=0xffa500  # Laranja para prévia
-        )
-
-        # Campo com resumo
-        embed.add_field(
-            name="Resumo",
-            value=f"**Valor por pessoa**: {valor_pessoa_formatado}",
-            inline=False
-        )
-
-        embed.set_footer(text="Valores em formato abreviado (K=mil, M=milhão, B=bilhão) cada pessoa deve receber o valor indicado")
-        
-        await interaction.response.send_message(embed=embed)
-
-    except ValueError as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro",
-            description=f"Erro ao processar o comando: {e}\n\n💡 **Formatos aceitos:**\n`17M` (17 milhões)\n`500K` (500 mil)\n`2.5B` (2.5 bilhões)\n`1000` (número normal)",
-            color=0xff0000
-        )
-        await interaction.response.send_message(embed=embed_erro)
-
-@bot.tree.command(name="guilda", description="Mostra informações da guilda LOUCOS POR PVE")
-async def guilda(interaction: discord.Interaction):
-    embed_loading = discord.Embed(
-        title="🔍 Buscando informações da guilda...",
-        description="Consultando API do Albion Online",
-        color=0xffa500
-    )
-    await interaction.response.send_message(embed=embed_loading)
-    
-    try:
-        guilda_info = await buscar_guilda_por_id(GUILD_ID)
-        if not guilda_info:
-            embed_erro = discord.Embed(
-                title="❌ Erro ao carregar dados",
-                description="Não foi possível carregar as informações da guilda",
-                color=0xff0000
-            )
-            await interaction.edit_original_response(embed=embed_erro)
-            return
-
-        embed = discord.Embed(
-            title="🏰 LOUCOS POR PVE",
-            description=f"Informações da guilda",
-            color=0x00ff00
-        )
-        embed.add_field(
-            name="📋 Informações Gerais",
-            value=f"**Nome:** {guilda_info['name']}\n"
-                  f"**Fundador:** {guilda_info['founder']}\n"
-                  f"**Membros:** {guilda_info['member_count']}\n"
-                  f"**Aliança:** {guilda_info['alliance_tag'] or 'Nenhuma'}",
-            inline=False
-        )
-        kill_fame_formatado = formatar_valor_abreviado(guilda_info['kill_fame'])
-        death_fame_formatado = formatar_valor_abreviado(guilda_info['death_fame'])
-        embed.add_field(
-            name="⚔️ Estatísticas de Combate",
-            value=f"**Kill Fame:** {kill_fame_formatado}\n"
-                  f"**Death Fame:** {death_fame_formatado}",
-            inline=True
-        )
-        founded_date = guilda_info['founded'][:10]
-        embed.add_field(
-            name="📅 Fundação",
-            value=founded_date,
-            inline=True
-        )
-        embed.set_footer(text="Dados da API oficial do Albion Online")
-        await interaction.edit_original_response(embed=embed)
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro interno",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.edit_original_response(embed=embed_erro)
-
-
-@bot.tree.command(name="membros", description="Lista todos os membros da guilda LOUCOS POR PVE")
-async def membros(interaction: discord.Interaction):
-    embed_loading = discord.Embed(
-        title="🔍 Buscando membros da guilda...",
-        description="Consultando API do Albion Online",
-        color=0xffa500
-    )
-    await interaction.response.send_message(embed=embed_loading)
-
-    try:
-        guilda_info = await buscar_guilda_por_id(GUILD_ID)
-        if not guilda_info:
-            embed_erro = discord.Embed(
-                title="❌ Erro ao carregar dados",
-                description="Não foi possível carregar as informações da guilda",
-                color=0xff0000
-            )
-            await interaction.edit_original_response(embed=embed_erro)
-            return  # <-- IMPORTANTE
-
-        membros = await buscar_membros_guilda(guilda_info)
-        if not membros:
-            embed_erro = discord.Embed(
-                title="❌ Erro ao buscar membros",
-                description="Não foi possível carregar os membros da guilda. A API pode estar indisponível.",
-                color=0xff0000
-            )
-            await interaction.edit_original_response(embed=embed_erro)
-            return  # <-- IMPORTANTE
-
-        # Montar embed com a lista de membros
-        embed = discord.Embed(
-            title="👥 MEMBROS DA GUILDA",
-            description=f"Total: {len(membros)} membros",
-            color=0x00ff00
-        )
-
-        nomes = [m.get('Name', 'Desconhecido') for m in membros]
-        nomes.sort()
-        # Discord limita fields a 1024 caracteres, então pode ser necessário dividir em partes
-        chunk_size = 40
-        for i in range(0, len(nomes), chunk_size):
-            chunk = nomes[i:i+chunk_size]
-            embed.add_field(
-                name=f"Membros {i+1} - {i+len(chunk)}",
-                value="\n".join(chunk),
-                inline=False
-            )
-
-        embed.set_footer(text="Dados da API oficial do Albion Online")
-        await interaction.edit_original_response(embed=embed)
-
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro interno",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.edit_original_response(embed=embed_erro)
-
-@bot.command()
-async def membro(ctx, *, nome_membro):
-    """Mostra informações detalhadas de um membro da guilda"""
-    
-    # Embed de carregamento
-    embed_loading = discord.Embed(
-        title="🔍 Buscando informações do membro...",
-        description=f"Procurando por: **{nome_membro}**",
-        color=0xffa500
-    )
-    loading_msg = await ctx.send(embed=embed_loading)
-    
-    try:
-        # Buscar informações do membro
-        membro_info = await buscar_membro_por_nome(nome_membro)
-        
-        if not membro_info:
-            embed_erro = discord.Embed(
-                title="❌ Membro não encontrado",
-                description=f"Não foi possível encontrar o membro **{nome_membro}** na guilda LOUCOS POR PVE",
-                color=0xff0000
-            )
-            embed_erro.add_field(
-                name="💡 Dica",
-                value="Verifique se o nome está correto (sem espaços extras) ou use !membros para ver a lista completa",
-                inline=False
-            )
-            await loading_msg.edit(embed=embed_erro)
-            return
-        
-        # Extrair dados do membro
-        nome = membro_info.get('Name', 'Desconhecido')
-        kill_fame = membro_info.get('KillFame', 0)
-        death_fame = membro_info.get('DeathFame', 0)
-        fame_ratio = membro_info.get('FameRatio', 0)
-        
-        # Estatísticas de PvE
-        lifetime_stats = membro_info.get('LifetimeStatistics', {})
-        pve_stats = lifetime_stats.get('PvE', {})
-        pve_total = pve_stats.get('Total', 0)
-        
-        # Estatísticas de coleta
-        gathering_stats = lifetime_stats.get('Gathering', {})
-        fiber_total = gathering_stats.get('Fiber', {}).get('Total', 0)
-        hide_total = gathering_stats.get('Hide', {}).get('Total', 0)
-        ore_total = gathering_stats.get('Ore', {}).get('Total', 0)
-        rock_total = gathering_stats.get('Rock', {}).get('Total', 0)
-        wood_total = gathering_stats.get('Wood', {}).get('Total', 0)
-        gathering_total = gathering_stats.get('All', {}).get('Total', 0)
-        
-        # Outras estatísticas
-        crafting_total = lifetime_stats.get('Crafting', {}).get('Total', 0)
-        fishing_fame = lifetime_stats.get('FishingFame', 0)
-        farming_fame = lifetime_stats.get('FarmingFame', 0)
-        
-        # Criar embed com informações do membro
-        embed = discord.Embed(
-            title=f"👤 {nome}",
-            description="📊 **Estatísticas Detalhadas**",
-            color=0x00ff00
-        )
-        
-        # Informações de PvP
-        embed.add_field(
-            name="⚔️ **PvP Stats**",
-            value=f"**Kill Fame:** {formatar_valor_abreviado(kill_fame)}\n"
-                  f"**Death Fame:** {formatar_valor_abreviado(death_fame)}\n"
-                  f"**Fame Ratio:** {fame_ratio:.2f}",
-            inline=True
-        )
-        
-        # Informações de PvE
-        embed.add_field(
-            name="🏰 **PvE Stats**",
-            value=f"**Total Fame:** {formatar_valor_abreviado(pve_total)}\n"
-                  f"**Crafting:** {formatar_valor_abreviado(crafting_total)}\n"
-                  f"**Fishing:** {formatar_valor_abreviado(fishing_fame)}\n"
-                  f"**Farming:** {formatar_valor_abreviado(farming_fame)}",
-            inline=True
-        )
-        
-        # Adicionar campo vazio para quebra de linha
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
-        
-        # Estatísticas de coleta
-        embed.add_field(
-            name="🌿 **Gathering Stats**",
-            value=f"**Total Gathering:** {formatar_valor_abreviado(gathering_total)}\n"
-                  f"🌾 **Fiber:** {formatar_valor_abreviado(fiber_total)}\n"
-                  f"🦌 **Hide:** {formatar_valor_abreviado(hide_total)}\n"
-                  f"⛏️ **Ore:** {formatar_valor_abreviado(ore_total)}\n"
-                  f"🪨 **Rock:** {formatar_valor_abreviado(rock_total)}\n"
-                  f"🪵 **Wood:** {formatar_valor_abreviado(wood_total)}",
-            inline=True
-        )
-        
-        # Informações da guilda
-        embed.add_field(
-            name="🏰 **Guild Info**",
-            value=f"**Guilda:** {membro_info.get('GuildName', 'N/A')}\n"
-                  f"**Aliança:** {membro_info.get('AllianceName', 'Nenhuma')}",
-            inline=True
-        )
-
-        embed.set_footer(text="Dados da API oficial do Albion Online. Desenvolvido por: @Klartz")
-
-        await loading_msg.edit(embed=embed)
-        
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro interno",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await loading_msg.edit(embed=embed_erro)
-
-@bot.command()
-async def botinfo(ctx):
-
-    embed = discord.Embed(
-        title="🤖 Informações do Bot",
-        description="Detalhes sobre o bot de pontuação",
-        color=0x00ff00  # Verde
-    )
-
-    embed.add_field(name="Nome", value=bot.user.name, inline=True)
-    embed.add_field(name="ID", value=bot.user.id, inline=True)
-    embed.add_field(name="Criador", value="Lucas (Klartz)", inline=True)
-    embed.add_field(name="Comandos Disponíveis", value="!pontuacao, !conteudo, !finalizar, !split, !guilda, !membros, !membro, !botinfo, !comandos", inline=False)
-    embed.add_field(name="Versão", value="1.0.0", inline=True)
-    embed.set_footer(text="Para mais comandos, use: !comandos. Desenvolvido por: Lucas (Klartz)")
-    
-    await ctx.send(embed=embed)
-
-
-
-
-# ------------------------------------- ADCIONAR PONTOS ---------------------------------
-
-@bot.tree.command(name="addpontos", description="Adiciona pontos a um membro")
-@app_commands.describe(
-    membro="Nome do membro ou @mention",
-    pontos="Quantidade de pontos para adicionar"
-)
-async def addpontos(interaction: discord.Interaction, membro: str, pontos: int):
-    # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
-    
-    # Verificar se o usuário tem permissão
-    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
-        embed_erro = discord.Embed(
-            title="❌ Sem Permissão",
-            description="Apenas admins podem gerenciar pontos.",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro, ephemeral=True)
-        return
-
-    try:
-        # 🔧 TRATAR MENTION
-        membro_limpo = await tratar_mention(interaction, membro)
-        nova_pontuacao = adicionar_pontos(membro_limpo, pontos)
-        
-        if nova_pontuacao is not None:
-            embed = discord.Embed(
-                title="✅ Pontos Adicionados",
-                description=f"**{pontos}** pontos adicionados para **{membro_limpo}**",
-                color=0x00ff00
-            )
-            embed.add_field(
-                name="📊 Pontuação Atual",
-                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
-                inline=False
-            )
-            
-            # Se foi um mention, mostrar info adicional
-            if membro != membro_limpo:
-                embed.add_field(
-                    name="🔍 Conversão",
-                    value=f"Mention {membro} → **{membro_limpo}**",
-                    inline=False
-                )
-            
-            await interaction.followup.send(embed=embed)
-        else:
-            embed_erro = discord.Embed(
-                title="❌ Erro",
-                description="Não foi possível salvar os pontos.",
-                color=0xff0000
-            )
-            await interaction.followup.send(embed=embed_erro)
-            
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro)
-
-
-# ------------------------------------- CONSULTAR POONTOS ---------------------------------
-
-
-@bot.tree.command(name="consultar_pontuação", description="Consulta a pontuação de um membro")
-@app_commands.describe(membro="Nome do membro para consultar")
-async def pontos(interaction: discord.Interaction, membro: str):
-
-    membro_limpo = await tratar_mention(interaction, membro)
-    pontuacao_atual = obter_pontuacao(membro_limpo)
-
-    embed = discord.Embed(
-        title="📊 Consulta de Pontuação",
-        color=0x0099ff
-    )
-    
-    if pontuacao_atual > 0:
-        embed.add_field(
-            name=f"🏆 {membro}",
-            value=f"**{pontuacao_atual}** pontos",
-            inline=False
-        )
-    else:
-        embed.add_field(
-            name=f"❌ {membro}",
-            value="Nenhum ponto registrado",
-            inline=False
-        )
-    
-    await interaction.response.send_message(embed=embed)
-
-
-
-# ------------------------------------- RANKING DE PONTUAÇÃO ---------------------------------
-
-
-@bot.tree.command(name="ranking", description="Mostra o ranking completo de pontuação")
-async def ranking(interaction: discord.Interaction):
-    ranking_completo = obter_ranking()
-    
-    if not ranking_completo:
-        embed = discord.Embed(
-            title="📊 Ranking de Pontuação",
-            description="Nenhum membro possui pontos ainda.",
-            color=0xff9900
-        )
-        await interaction.response.send_message(embed=embed)
-        return
-    
-    embed = discord.Embed(
-        title="🏆 RANKING DE PONTUAÇÃO - LOUCOS POR PVE",
-        description="Top membros por pontuação",
-        color=0xffd700
-    )
-    
-    # Mostrar top 10 (ou todos se menos de 10)
-    top_membros = ranking_completo[:10]
-    
-    ranking_texto = ""
-    for i, (nome, pontos) in enumerate(top_membros, 1):
-        if i == 1:
-            emoji = "🥇"
-        elif i == 2:
-            emoji = "🥈"
-        elif i == 3:
-            emoji = "🥉"
-        else:
-            emoji = f"{i}."
-            
-        ranking_texto += f"{emoji} **{nome}** - {pontos} pts\n"
-    
-    embed.add_field(
-        name="🏆 Top Membros",
-        value=ranking_texto,
-        inline=False
-    )
-    
-    if len(ranking_completo) > 10:
-        embed.set_footer(text=f"Mostrando top 10 de {len(ranking_completo)} membros")
-    else:
-        embed.set_footer(text=f"Total: {len(ranking_completo)} membros")
-    
-    await interaction.response.send_message(embed=embed)
-
-
-# ------------------------------------- REMOVER PONTOS ---------------------------------
-
-
-
-@bot.tree.command(name="removerpontos", description="Remove pontos de um membro")
-@app_commands.describe(
-    membro="Nome do membro ou @mention",
-    pontos="Quantidade de pontos para remover"
-)
-async def removerpontos(interaction: discord.Interaction, membro: str, pontos: int):
-    # 🚀 ADICIONAR DEFER
-    await interaction.response.defer()
-    
-    # Verificar se o usuário tem permissão
-    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
-        embed_erro = discord.Embed(
-            title="❌ Sem Permissão",
-            description="Apenas admins podem gerenciar pontos.",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # USAR FOLLOWUP
-        return
-
-    try:
-        membro_limpo = await tratar_mention(interaction, membro)
-        nova_pontuacao = adicionar_pontos(membro_limpo, -pontos)
-        
-        if nova_pontuacao is not None:
-            embed = discord.Embed(
-                title="✅ Pontos Removidos",
-                description=f"**{pontos}** pontos removidos de **{membro_limpo}**",
-                color=0xff9900
-            )
-            embed.add_field(
-                name="📊 Pontuação Atual",
-                value=f"**{membro_limpo}**: {nova_pontuacao} pontos",
-                inline=False
-            )
-            
-            if membro != membro_limpo:
-                embed.add_field(
-                    name="🔍 Conversão",
-                    value=f"Mention {membro} → **{membro_limpo}**",
-                    inline=False
-                )
-            
-            await interaction.followup.send(embed=embed)  # USAR FOLLOWUP
-        else:
-            embed_erro = discord.Embed(
-                title="❌ Erro",
-                description="Não foi possível remover os pontos.",
-                color=0xff0000
-            )
-            await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
-            
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro)  # USAR FOLLOWUP
-
-# ------------------------------------- ADICIONAR SORTEIO ---------------------------------
-
-
-@bot.tree.command(name="addsorteio", description="Adiciona uma pessoa à lista de sorteios")
-@app_commands.describe(nome="Nome da pessoa ou @mention que ganhou o sorteio")
-async def addsorteio(interaction: discord.Interaction, nome: str):
-    # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
-    
-    # Verificar se o usuário tem permissão
-    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
-        embed_erro = discord.Embed(
-            title="❌ Sem Permissão",
-            description="Apenas admins podem gerenciar a lista de sorteios.",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
-        return
-    
-    try:
-        # 🔧 TRATAR MENTION
-        nome_limpo = await tratar_mention(interaction, nome)
-        
-        adicionar_sorteio(nome_limpo)
-        embed = discord.Embed(
-            title="✅ Sorteio Adicionado",
-            description=f"**{nome_limpo}** foi adicionado à lista de sorteios.",
-            color=0x00ff00
-        )
-        
-        # Se foi um mention, mostrar info adicional
-        if nome != nome_limpo:
-            embed.add_field(
-                name="🔍 Conversão",
-                value=f"Mention {nome} → **{nome_limpo}**",
-                inline=False
-            )
-        
-        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
-        
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
-
-# ------------------------------------- REMOVER SORTEIO ---------------------------------
-
-@bot.tree.command(name="removesorteio", description="Remove uma pessoa da lista de sorteios")
-@app_commands.describe(nome="Nome da pessoa ou @mention para remover da lista")
-async def removesorteio(interaction: discord.Interaction, nome: str):
-    # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
-    
-    # Verificar se o usuário tem permissão
-    if not any(role.name.lower() in ["admin", "moderador", "braço direito", "líder"] for role in interaction.user.roles):
-        embed_erro = discord.Embed(
-            title="❌ Sem Permissão",
-            description="Apenas admins podem gerenciar a lista de sorteios.",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro, ephemeral=True)  # 🔧 USAR FOLLOWUP
-        return
-    
-    try:
-        # 🔧 TRATAR MENTION
-        nome_limpo = await tratar_mention(interaction, nome)
-        
-        if remover_sorteio(nome_limpo):
-            embed = discord.Embed(
-                title="✅ Sorteio Removido",
-                description=f"**{nome_limpo}** foi removido da lista de sorteios.",
-                color=0x00ff00
-            )
-        else:
-            embed = discord.Embed(
-                title="❌ Não Encontrado",
-                description=f"**{nome_limpo}** não estava na lista de sorteios.",
-                color=0xff9900
-            )
-        
-        # Se foi um mention, mostrar info adicional
-        if nome != nome_limpo:
-            embed.add_field(
-                name="🔍 Conversão",
-                value=f"Mention {nome} → **{nome_limpo}**",
-                inline=False
-            )
-        
-        await interaction.followup.send(embed=embed)  # 🔧 USAR FOLLOWUP
-        
-    except Exception as e:
-        embed_erro = discord.Embed(
-            title="❌ Erro",
-            description=f"Ocorreu um erro: {str(e)}",
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=embed_erro)  # 🔧 USAR FOLLOWUP
-
-
-
-# ------------------------------------- LISTAR SORTEIO ---------------------------------
-
-
-@bot.tree.command(name="listsorteios", description="Lista todas as pessoas que ganharam sorteios")
-async def listsorteios(interaction: discord.Interaction):
-    sorteios = carregar_sorteios()
-    
-    if not sorteios:
-        embed = discord.Embed(
-            title="📋 Lista de Sorteios",
-            description="Nenhuma pessoa ganhou sorteios recentemente.",
-            color=0xff9900
-        )
-        await interaction.response.send_message(embed=embed)
-        return
-    
-    embed = discord.Embed(
-        title="🎲 Lista de Sorteios Ativos",
-        description="Pessoas que ganharam sorteios e podem puxar DGs:",
-        color=0xffd700
-    )
-    
-    sorteios_texto = "\n".join([f"🎯 **{nome}**" for nome in sorteios])
-    embed.add_field(
-        name="🏆 Ganhadores Atuais",
-        value=sorteios_texto,
-        inline=False
-    )
-    
-    embed.set_footer(text=f"Total: {len(sorteios)} pessoas")
-    await interaction.response.send_message(embed=embed)
-
 
 
 bot.run("MTQyMDQxNzA2MDY0Njk0OTAwNQ.GQNVUm.njRh09n8aqcNSBWnGzJeTAnREJHQTZDwuiTJ3o")
