@@ -43,7 +43,7 @@ PONTOS_POR_CONTEUDO = {
     "MONTARIA (4M)": 80,
     "PRATA (5M)": 90,
     "ARMA 8.3": 250,
-    "MAMUTE": 4000
+    # "MAMUTE": 4000
     # você pode adicionar mais tipos depois
 }
 
@@ -222,51 +222,54 @@ async def dg_beneficente(
     tipo: app_commands.Choice[str],
     integrantes: str
 ):
+    # Tentar deferir a interação — se já expirou ou não existir, capturar e continuar
+    try:
+        await safe_defer(interaction)
+    except Exception as e:
+        # Captura NotFound (Unknown interaction) e HTTPException para evitar crash
+        print(f"[WARN] Não foi possível deferir interação (/dg_beneficente): {e}")
+        # Nesse caso, a interação pode já ter expirado; tentamos seguir usando followup mais tarde
+
     global conteudo_em_aberto
 
-    # 🚀 RESPONDER IMEDIATAMENTE para evitar timeout
-    await interaction.response.defer()
-
-    # NOVA VERIFICAÇÃO CORRIGIDA: Tratar mentions do caller
-    usuario_comando = interaction.user.display_name  # Nome/apelido de quem executou o comando
+    usuario_comando = interaction.user.display_name  
     
-    # Limpar o caller se for um mention (usando função auxiliar correta)
-    # caller_limpo = await tratar_mention(interaction, caller)
-    
-    # Verificar se o caller (limpo) corresponde ao usuário que executou o comando
-    # if caller_limpo.lower() != usuario_comando.lower():  
-    #     embed_safado = discord.Embed(
-    #         title="🚨 EI SAFADO! 🚨",
-    #         description=f"**{usuario_comando}**, esse não é você! {caller} Tá querendo roubar os pontos dos outros?\n\n**-5 pontos** para você! 😡",
-    #         color=0xff0000
-    #     )
-    #     embed_safado.add_field(
-    #         name="😂 Brincadeira...",
-    #         value="Mas não faz isso de novo, é sério! 😠",
-    #         inline=False
-    #     )
-    #     embed_safado.add_field(
-    #         name="🔍 Detalhes da verificação:",
-    #         value=f"**Você:** {usuario_comando}\n**Caller informado:** {caller_limpo}",
-    #         inline=False
-    #     )
-    #     embed_safado.set_footer(text="Sistema anti-trapaça ativado! Use seu próprio nome como caller.")
-        
-    #     # 🔧 USAR followup em vez de response
-    #     await interaction.followup.send(embed=embed_safado)
-    #     return  # Interrompe a execução do comando
-
     tipo_valor = tipo.value
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if integrantes:
+        for parte in integrantes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    # Depois de validar mentions, converter para nomes limpos e checar self-add
     for parte in integrantes.split():
         nome_limpo = await tratar_mention(interaction, parte)
         if nome_limpo == usuario_comando:
             embed_erro = discord.Embed(
                 title="❌ Erro de Integrantes",
-                description=f"**{usuario_comando}**, você não pode se adicionar como integrante, você já é o caller!\n\n💡 O caller já é automaticamente adicionado como participante, **mas não recebe pontuação!!!**",
+                description=f"**{usuario_comando}**, você não pode se adicionar como integrante, você já é o caller!",
                 color=0xff0000
             )
-            embed_erro.set_footer(text=f"Consulte /tutorial para mais informações.")
-            # 🔧 USAR followup em vez de response
+            # Usar field para destacar a observação
+            embed_erro.add_field(name="Observação", value="**O caller já é automaticamente adicionado como participante, mas não recebe pontuação!!!**", inline=False)
+            embed_erro.set_footer(text=f"Consulte /tutorial_dg para mais informações.")
             await interaction.followup.send(embed=embed_erro, ephemeral=True)
             return  # Interrompe a execução do comando
     # Verificar se o tipo existe no dicionário
@@ -383,8 +386,10 @@ async def dg_beneficente(
     
     view = FuncoesEquipeView(membros, interaction.user)
     view.interaction = interaction
-    # 🔧 USAR followup em vez de response
-    await interaction.followup.send(embed=embed, view=view)
+
+    # Enviar mensagem inicial e armazenar referência para edição futura
+    message = await interaction.followup.send(embed=embed, view=view)
+    view.message = message
     
 
 # ;
@@ -534,7 +539,7 @@ async def tutorial_dg(interaction: discord.Interaction):
     Procura por imagens locais (tutorial_tipos.png, tutorial_nomes.png, tutorial_roles.png)
     e as anexa aos embeds se existirem.
     """
-    await interaction.response.defer()
+    await safe_defer(interaction)
 
     # Parte 1: Selecionar o tipo da DG
     embed1 = discord.Embed(
@@ -610,7 +615,29 @@ async def tutorial_dg(interaction: discord.Interaction):
 @bot.tree.command(name="zoar", description="Zoar um membro com uma mensagem personalizada")
 @app_commands.describe(membro="Membro a ser zoado (menção ou nome)")
 async def zoar(interaction: discord.Interaction, membro: discord.Member):
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if membro:
+        for parte in membro.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
 
     # Pegar display_name do membro para comparação
     alvo_nome = membro.display_name
@@ -884,7 +911,29 @@ async def botinfo(ctx):
 )
 async def addpontos(interaction: discord.Interaction, integrantes: str, pontos: int):
     # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+        # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if integrantes:
+        for parte in integrantes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
     
     # Verificar se o usuário tem permissão
     if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
@@ -966,7 +1015,29 @@ async def addpontos(interaction: discord.Interaction, integrantes: str, pontos: 
 @app_commands.describe(membro="Nome do membro para consultar")
 async def pontos(interaction: discord.Interaction, membro: str):
 
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if membro:
+        for parte in membro.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
 
     membro_limpo = await tratar_mention(interaction, membro)
     pontuacao_atual = obter_pontuacao(membro_limpo)
@@ -986,8 +1057,8 @@ async def pontos(interaction: discord.Interaction, membro: str):
         )
     else:
         embed.add_field(
-            name=f"❌ {nome_exibicao}",
-            value="Nenhum ponto registrado",
+            name=f"😢 {nome_exibicao}😢 ",
+            value="Você não possui pontos ainda, por favor participe de DGs beneficentes ou complete atividades para ganhar pontos!",
             inline=False
         )
     await interaction.followup.send(embed=embed)
@@ -1080,7 +1151,29 @@ async def ranking(interaction: discord.Interaction):
 )
 async def removerpontos(interaction: discord.Interaction, integrantes: str, pontos: int):
     # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+        # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if integrantes:
+        for parte in integrantes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
     
     # Verificar se o usuário tem permissão
     if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
@@ -1141,6 +1234,87 @@ async def removerpontos(interaction: discord.Interaction, integrantes: str, pont
         )
         await interaction.followup.send(embed=embed_erro)
 
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- REMOVER MEMBRO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+@bot.tree.command(name="remover_membro_pontos", description="Remove membro do sistema de pontos")
+@app_commands.describe(
+    integrantes="Nome do membro - @mention"
+)
+async def remover_membro_pontos(interaction: discord.Interaction, integrantes: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await safe_defer(interaction)
+
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas zeladores podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    try:
+        
+        membros = []  # CORRIGIDO: garantir que seja lista
+        results = []
+        if integrantes:
+            nome_limpo = await tratar_mention(interaction, integrantes)
+            membros.append(nome_limpo)
+
+        for item in membros:
+            try:
+                membro_limpo = await tratar_mention(interaction, item)
+                print(f"[DEBUG] Membro original: {item}, Membro limpo: {membro_limpo}")
+                nova_pontuacao = remover_membro(membro_limpo)
+                if nova_pontuacao is not None:
+                    results.append((membro_limpo, True, nova_pontuacao))
+                else:
+                    results.append((membro_limpo, False, None))
+            except Exception as inner_e:
+                results.append((item, False, str(inner_e)))
+
+        # Construir embed resumo
+        embed = discord.Embed(title=f"✅ Resultado: remoção de membro", color=0x00ff00)
+        embed.set_author(name="Sistema de Pontuação - LOUCOS POR PVE", icon_url=bot.user.avatar.url if bot.user.avatar else None)
+        sucesso_lines = []
+        erro_lines = []
+        for nome, ok, value in results:
+            if ok:
+                sucesso_lines.append(f"**{nome}** → foi removido do sistema de pontos")
+            else:
+                erro_lines.append(f"**{nome}** → falha ({value})")
+
+        if sucesso_lines:
+            embed.add_field(name=f"✅ Sucesso", value="\n".join(sucesso_lines), inline=False)
+            embed.set_footer(text="Use /consultar_pontuação <membro> para ver a pontuação atual.")
+        if erro_lines:
+            embed.add_field(name="❌ Erros", value="\n".join(erro_lines), inline=False)
+            embed.set_footer(text="Verifique se os nomes estão corretos e tente novamente.")
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro inesperado: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)
+
 
 # ;
 # ;
@@ -1161,7 +1335,30 @@ async def removerpontos(interaction: discord.Interaction, integrantes: str, pont
 @app_commands.describe(nomes="Nomes das pessoas ou @mention que ganharam o sorteio")
 async def add_sorteio(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if nomes:
+        for parte in nomes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+        
     
     # Verificar se o usuário tem permissão
     if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
@@ -1222,6 +1419,208 @@ async def add_sorteio(interaction: discord.Interaction, nomes: str):
         )
         await interaction.followup.send(embed=embed_erro)
 
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- ADICIONAR PATROCINIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+
+
+
+@bot.tree.command(name="add_patrocinio", description="Adiciona uma pessoa à lista de patrocinadores")
+@app_commands.describe(nomes="Nomes das pessoas ou @mention que ganharam o patrocinio")
+async def add_patrocinio(interaction: discord.Interaction, nomes: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if nomes:
+        for parte in nomes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+        
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas zeladores podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    try:
+        
+        membros = []  # CORRIGIDO: garantir que seja lista
+        results = []
+        if nomes:
+            for parte in nomes.split():
+                nome_limpo = await tratar_mention(interaction, parte)
+                membros.append(nome_limpo)
+
+        for item in membros:
+            try:
+                membro_limpo = await tratar_mention(interaction, item)
+                adicionado = adicionar_patrocinios(membro_limpo)
+                if adicionado:
+                    results.append((membro_limpo, True, None))
+                    print(f"Membro adicionado à lista de patrocinadores: {membro_limpo}")
+                else:
+                    results.append((membro_limpo, False, None))
+            except Exception as inner_e:
+                results.append((item, False, str(inner_e)))
+
+        # Construir embed resumo
+        embed = discord.Embed(title=f"✅ Resultado: adição ao patrocinio 💎💎", color=0x00ff00)
+        embed.set_author(name="Sistema de Pontuação - LOUCOS POR PVE", icon_url=bot.user.avatar.url if bot.user.avatar else None)
+        sucesso_lines = []
+        erro_lines = []
+        for nome, ok, erro in results:
+            if ok:
+                sucesso_lines.append(f"**{nome}** → adicionado a lista de patrocinadores com sucesso!")
+            else:
+                erro_lines.append(f"**{nome}** → falha ao adicionar a lista de patrocinadores. Erro: {erro}")
+
+        if sucesso_lines:
+            embed.add_field(name=f"✅ Sucesso 💎💎", value="\n".join(sucesso_lines), inline=False)
+            embed.set_footer(text="Use /listar_patrocinadores para ver a situação atual.")
+        if erro_lines:
+            embed.add_field(name="❌ Erros", value="\n".join(erro_lines), inline=False)
+            embed.set_footer(text="Verifique se os nomes estão corretos e tente novamente.")
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro inesperado: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)
+
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- REMOVER PATROCINIO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="remover_patrocinio", description="Remove uma pessoa da lista de patrocinadores")
+@app_commands.describe(nomes="Nome da pessoa ou @mention para remover da lista")
+async def remover_patrocinio(interaction: discord.Interaction, nomes: str):
+    # 🚀 RESPONDER IMEDIATAMENTE
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if nomes:
+        for parte in nomes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+    
+    # Verificar se o usuário tem permissão
+    if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
+        embed_erro = discord.Embed(
+            title="❌ Sem Permissão",
+            description="Apenas zeladores podem gerenciar pontos.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    try:
+        
+        membros = []  # CORRIGIDO: garantir que seja lista
+        results = []
+        if nomes:
+            for parte in nomes.split():
+                nome_limpo = await tratar_mention(interaction, parte)
+                membros.append(nome_limpo)
+
+        for item in membros:
+            try:
+                membro_limpo = await tratar_mention(interaction, item)
+                removido = remover_patrocinios(membro_limpo)
+                if removido:
+                    results.append((membro_limpo, True, None))
+                    print(f"Membro removido da lista de patrocinadores: {membro_limpo}")
+                else:
+                    results.append((membro_limpo, False, None))
+            except Exception as inner_e:
+                results.append((item, False, str(inner_e)))
+
+        # Construir embed resumo
+        embed = discord.Embed(title=f"✅ Resultado: remoção do patrocinador 💎💎", color=0x00ff00)
+        embed.set_author(name="Sistema de Pontuação - LOUCOS POR PVE", icon_url=bot.user.avatar.url if bot.user.avatar else None)
+        sucesso_lines = []
+        erro_lines = []
+        for nome, ok, erro in results:
+            if ok:
+                sucesso_lines.append(f"**{nome}** → removido da lista de patrocinadores com sucesso!")
+            else:
+                erro_lines.append(f"**{nome}** → falha ao remover da lista de patrocinadores. Erro: {erro}")
+
+        if sucesso_lines:
+            embed.add_field(name=f"✅ Sucesso 💎💎", value="\n".join(sucesso_lines), inline=False)
+            embed.set_footer(text="Use /listar_patrocinadores para ver a situação atual.")
+        if erro_lines:
+            embed.add_field(name="❌ Erros", value="\n".join(erro_lines), inline=False)
+            embed.set_footer(text="Verifique se os nomes estão corretos e tente novamente.")
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        embed_erro = discord.Embed(
+            title="❌ Erro",
+            description=f"Ocorreu um erro inesperado: {str(e)}",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro)
 
 # ;
 # ;
@@ -1239,7 +1638,29 @@ async def add_sorteio(interaction: discord.Interaction, nomes: str):
 @app_commands.describe(nomes="Nome da pessoa ou @mention para remover da lista")
 async def remover_sorteios(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
-    await interaction.response.defer()
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if nomes:
+        for parte in nomes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
     
     # Verificar se o usuário tem permissão
     if not any(role.name.lower() in ["zelador"] for role in interaction.user.roles):
@@ -1307,6 +1728,47 @@ async def remover_sorteios(interaction: discord.Interaction, nomes: str):
 # ;
 # ;
 # ;
+# ------------------------------------- LISTAR PATROCINADORES ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.tree.command(name="listar_patrocinadores", description="Lista todos os patrocinadores atuais")
+async def listar_patrocinadores(interaction: discord.Interaction):
+    patrocinadores = carregar_patrocinadores()
+
+    if not patrocinadores:
+        embed = discord.Embed(
+            title="📋 Lista de Patrocinadores",
+            description="Nenhum patrocinador encontrado.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title="💎 Lista de Patrocinadores Ativos",
+        description="Patrocinadores que ainda não fizeram a DG da semana e podem puxar:",
+        color=0xffd700
+    )
+
+    patrocinadores_texto = "\n".join([f"💎 **{nome}**" for nome in patrocinadores])
+    embed.add_field(
+        name="🏆 Patrocinadores Atuais",
+        value=patrocinadores_texto,
+        inline=False
+    )
+
+    embed.set_footer(text=f"Total: {len(patrocinadores)} pessoas")
+    await interaction.response.send_message(embed=embed)
+    
+# ;
+# ;
+# ;
+# ;
+# ;
 # ------------------------------------- LISTAR SORTEIO ---------------------------------
 # ;
 # ;
@@ -1356,8 +1818,8 @@ async def listar_sorteios(interaction: discord.Interaction):
 # ;
 # ;
 
-@bot.tree.command(name="listapontuacao", description="Mostra a lista completa de todos os membros e seus pontos")
-async def listapontuacao(interaction: discord.Interaction):
+@bot.tree.command(name="listar_pontuacao", description="Mostra a lista completa de todos os membros e seus pontos")
+async def listar_pontuacao(interaction: discord.Interaction):
     pontuacao = obter_toda_pontuacao()
     if not pontuacao:
         embed = discord.Embed(
@@ -1542,7 +2004,31 @@ async def conserta_db(ctx):
     valor="Quantidade de pontos a transferir"
 )
 async def troca(interaction: discord.Interaction, destinatario: str, valor: int):
-    await interaction.response.defer()
+
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if destinatario:
+        for parte in destinatario.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+    
     remetente_nome = interaction.user.display_name
     # Validar valor
     if valor <= 0:
@@ -1692,6 +2178,15 @@ def remover_sorteio(nome_pessoa):
         salvar_sorteios(sorteios)
         return True
     return False
+
+def adicionar_patrocinios(nome_pessoa):
+    """Adiciona uma pessoa à lista de patrocinadores"""
+    patrocinadores = carregar_patrocinadores()
+    if nome_pessoa not in patrocinadores:
+        patrocinadores.append(nome_pessoa)
+        salvar_patrocinadores(patrocinadores)
+    return True
+
 def remover_patrocinios(nome_pessoa):
     """Remove uma pessoa da lista de patrocinadores"""
     patrocinadores = carregar_patrocinadores()
@@ -1847,7 +2342,7 @@ async def agendar_atualizacao_patrocinadores():
         if patrocinadores_pendentes:
             lista_pendentes = '\n'.join(f"• {nome}" for nome in patrocinadores_pendentes)
             texto_pendentes = f"\n\n**Patrocinadores que ainda não fizeram a DG dessa semana:**\n{lista_pendentes}"
-            texto_pendentes += "\n\n*Lembrete: Se não fizer a DG até o horário, perderá a chance desta semana!*"
+            texto_pendentes += "\n\n*Lembrete: Se não fizer a DG até o reset semanal (domingo 00:00), perderá a chance desta semana!*"
         else:
             texto_pendentes = "\n\nTodos os patrocinadores já fizeram a DG beneficente nesta semana!"
 
@@ -1879,6 +2374,7 @@ class FuncoesEquipeView(discord.ui.View):
         self.tank_set = False
         self.healer_set = False
         self.interaction = None
+        self.mensagens_ephemeral = {}
 
         for membro in membros:
             self.add_item(FuncoesEquipeButton(membro, self))
@@ -1900,10 +2396,14 @@ class FuncoesEquipeView(discord.ui.View):
                 value=f"Função: **{funcao}**",
                 inline=False
             )
-        try:
-            await interaction.response.edit_message(embed=embed, view=self)
-        except discord.InteractionResponded:
-            await interaction.edit_original_response(embed=embed, view=self)
+        # Atualiza o embed na mensagem já existente, se possível
+        if hasattr(self, "message") and self.message:
+            await self.message.edit(embed=embed, view=self)
+            # Fecha o select sem criar novo embed/ephemeral
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
 
 class FinalizarButton(discord.ui.Button):
     def __init__(self):
@@ -2026,6 +2526,13 @@ class FinalizarButton(discord.ui.Button):
         
         # Limpar conteúdo em aberto
         conteudo_em_aberto = None
+        
+        # Fechar todas as mensagens ephemeral individuais
+        for membro, msg in getattr(self.view, "mensagens_ephemeral", {}).items():
+            try:
+                await msg.delete()
+            except Exception:
+                pass
 
 class FuncoesEquipeButton(discord.ui.Button):
     def __init__(self, membro, view):
@@ -2048,11 +2555,12 @@ class FuncoesEquipeButton(discord.ui.Button):
         options.append(discord.SelectOption(label="DPS", emoji="⚔️"))
 
         select = FuncoesEquipeSelect(self.membro, self.view, options)
-        await interaction.response.send_message(
+        msg = await interaction.response.send_message(
             f"Selecione a função para **{self.membro}**:",
             view=select,
             ephemeral=True
         )
+        self.view.mensagens_ephemeral[self.membro] = msg
 
 
 class FuncoesEquipeSelect(discord.ui.View):
@@ -2228,7 +2736,27 @@ async def buscar_membro_por_nome(nome_membro):
         except Exception as e:
             print(f"Erro ao buscar membro: {e}")
             return None
-        
+
+async def safe_defer(interaction: discord.Interaction, ephemeral: bool = False) -> bool:
+    """Tenta deferir a interação de forma segura sem exigir imports extras.
+
+    Retorna True se defer foi bem-sucedido, False caso contrário.
+    """
+    try:
+        await interaction.response.defer(ephemeral=ephemeral)
+        return True
+    except Exception as e:
+        # Não importar tipos específicos — inspecionar nome da exceção em runtime
+        ex_name = e.__class__.__name__
+        if ex_name == 'NotFound':
+            print(f"[safe_defer] NotFound ao tentar deferir: {e}")
+        elif ex_name == 'HTTPException':
+            print(f"[safe_defer] HTTPException ao tentar deferir: {e}")
+        else:
+            print(f"[safe_defer] Erro inesperado ao tentar deferir: {e}")
+        return False
+
+
 async def atualizar_ranking():
      for guild in bot.guilds:
         # print(f"[GUILD] Verificando guilda: {guild.name} (ID: {guild.id})")
