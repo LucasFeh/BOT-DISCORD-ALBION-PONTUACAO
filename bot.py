@@ -1,5 +1,6 @@
 
 import datetime
+from email.policy import default
 import re
 import aiofiles
 import pytz
@@ -206,10 +207,10 @@ TIPOS_CHOICES = [
 # ;
 # ;
 
+conteudos_em_aberto = {}
 
 @bot.tree.command(name="dg_beneficente", description="Registra uma DG beneficente")
 @app_commands.describe(
-    # caller="De quem foi a DG Beneficiente?",
     tipo="Tipo da Beneficiente",
     integrantes="Lista de integrantes separados por espaço"
 )
@@ -219,24 +220,31 @@ TIPOS_CHOICES = [
 ])
 async def dg_beneficente(
     interaction: discord.Interaction,
-    # caller: str,
     tipo: app_commands.Choice[str],
     integrantes: str
 ):
-    # Tentar deferir a interação — se já expirou ou não existir, capturar e continuar
     try:
         await safe_defer(interaction)
     except Exception as e:
-        # Captura NotFound (Unknown interaction) e HTTPException para evitar crash
         print(f"[WARN] Não foi possível deferir interação (/dg_beneficente): {e}")
-        # Nesse caso, a interação pode já ter expirado; tentamos seguir usando followup mais tarde
 
-    global conteudo_em_aberto
-
+    # Usar ID do usuário como chave única
+    user_id = interaction.user.id
     usuario_comando = interaction.user.display_name  
+    
+    # Verificar se o usuário já tem um comando em andamento
+    if user_id in conteudos_em_aberto:
+        embed_erro = discord.Embed(
+            title="❌ Comando em Andamento",
+            description="Você já tem um comando /dg_beneficente em andamento. Finalize-o antes de iniciar outro.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
     
     tipo_valor = tipo.value
 
+    # ... resto da validação permanece igual ...
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
     mention_pattern = re.compile(r"^<@!?(\d+)>$")
@@ -268,11 +276,11 @@ async def dg_beneficente(
                 description=f"**{usuario_comando}**, você não pode se adicionar como integrante, você já é o caller!",
                 color=0xff0000
             )
-            # Usar field para destacar a observação
             embed_erro.add_field(name="Observação", value="**O caller já é automaticamente adicionado como participante, mas não recebe pontuação!!!**", inline=False)
             embed_erro.set_footer(text=f"Consulte /tutorial_dg para mais informações.")
             await interaction.followup.send(embed=embed_erro, ephemeral=True)
-            return  # Interrompe a execução do comando
+            return
+
     # Verificar se o tipo existe no dicionário
     if tipo_valor not in TIPOS_DE_DG:
         embed_erro = discord.Embed(
@@ -280,12 +288,11 @@ async def dg_beneficente(
             description=f"O tipo **{tipo_valor}** não foi encontrado no sistema.",
             color=0xff0000
         )
-        # 🔧 USAR followup em vez de response
         await interaction.followup.send(embed=embed_erro, ephemeral=True)
         return
 
     # 🔥 NOVAS VERIFICAÇÕES POR TIPO 🔥
-    member = interaction.user  # Membro do Discord que executou o comando
+    member = interaction.user
     
     if tipo_valor == "PATROCIONADOR":
         with open(ARQUIVO_PATROCINADOR, 'r', encoding='utf-8') as f:
@@ -298,7 +305,6 @@ async def dg_beneficente(
                 color=0xff0000
             )
             embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Patrocinador' podem usar este tipo.")
-            # 🔧 USAR followup em vez de response
             await interaction.followup.send(embed=embed_erro)
             return
         if usuario_comando not in patrocinadores_pendentes:
@@ -308,7 +314,6 @@ async def dg_beneficente(
                 color=0xff0000
             )
             embed_erro.set_footer(text="💡 Apenas patrocinadores que ainda não fizeram a DG dessa semana podem usar este tipo.")
-            # 🔧 USAR followup em vez de response
             await interaction.followup.send(embed=embed_erro)
             return
     elif tipo_valor == "SORTEIO":
@@ -319,7 +324,6 @@ async def dg_beneficente(
                 color=0xff0000
             )
             embed_erro.set_footer(text="💡 Apenas quem ganhou sorteios recentes pode usar este tipo.")
-            # 🔧 USAR followup em vez de response
             await interaction.followup.send(embed=embed_erro)
             return
     
@@ -331,7 +335,6 @@ async def dg_beneficente(
                 color=0xff0000
             )
             embed_erro.set_footer(text="💡 Apenas membros com TAG de 'Recrutador' podem usar este tipo.")
-            # 🔧 USAR followup em vez de response
             await interaction.followup.send(embed=embed_erro)
             return
     
@@ -353,19 +356,18 @@ async def dg_beneficente(
                 inline=False
             )
             embed_erro.set_footer(text="Use /ranking para ver o ranking de pontuação.")
-            # 🔧 USAR followup em vez de response
             await interaction.followup.send(embed=embed_erro)
             return
          
-    membros = [usuario_comando]  # CORRIGIDO: garantir que seja lista
+    membros = [usuario_comando]
     if integrantes:
         for parte in integrantes.split():
             nome_limpo = await tratar_mention(interaction, parte)
             membros.append(nome_limpo)
 
-
-    conteudo_em_aberto = {
-        "caller": usuario_comando,  # CORRIGIDO: usar caller_limpo
+    # Armazenar dados específicos para este usuário
+    conteudos_em_aberto[user_id] = {
+        "caller": usuario_comando,
         "tipo": tipo_valor,
         "membros": membros,
     }
@@ -385,10 +387,10 @@ async def dg_beneficente(
             inline=False
         )
     
-    view = FuncoesEquipeView(membros, interaction.user)
+    # Passar o user_id para a view
+    view = FuncoesEquipeView(membros, interaction.user, user_id)
     view.interaction = interaction
 
-    # Enviar mensagem inicial e armazenar referência para edição futura
     message = await interaction.followup.send(embed=embed, view=view)
     view.message = message
     
@@ -643,16 +645,38 @@ async def zoar(interaction: discord.Interaction, membro: discord.Member):
     # Pegar display_name do membro para comparação
     alvo_nome = membro.display_name
 
-    # Mensagem padrão de zoeira (personalizável)
-    mensagem = f"{membro.mention} — Você sabe que não pode sentar com a gangue? Agora no Albion: você não pode saquear com a gangue sem falar comigo! 😏" 
-
-    # Caso especial para [IPVE] Klartz
-    if alvo_nome == "[IPVE] Klartz":
-        mensagem = (
-            f"{membro.mention} — "
-            "Você não pode sentar com a gangue... mas pode puxar DG beneficente, só não esquece de trazer mamutes. 🐘🔥\n"
-            "(Brincadeira, Klartz — você é o chefão dos patrocinadores ❤️)"
-        )
+    match alvo_nome:
+        case "[IPVE] Klartz":
+            mensagem = (
+                f"{membro.mention} — "
+                "Cuidado com esse cara, é um dos espiões mais temidos do albion online, o spy dele é tão bem feito que ele é capaz de se enfiar no meio dos staffs. 🐘🔥\n"
+                "E ai quando você menos esperar... virou bolsinha de LOOT!\n"
+            )
+        case "[PVE]  AnnyCaroline":
+            mensagem = (
+                f"{membro.mention} — "
+                "Ei Anny, já viu um isekai com preludio de morte sendo ataque cardiaco? Porque eu acho que você tá vivendo um agora... "
+            )
+        case "[PVE] Pedroww284":
+            mensagem = (
+                f"{membro.mention} — "
+                "Loucarada, esse cara é tão louco por pontos que quando ele era filhote se jogou de cabeça no chão só pra ganhar 12"
+            )
+        case "[PVE] Pedroww284":
+            mensagem = (
+                f"{membro.mention} — "
+                "Loucarada, esse cara é tão louco por pontos que quando ele era filhote se jogou de cabeça no chão só pra ganhar 12"
+            )
+        case "[IPVE] MatadorDSpam":
+            mensagem = (
+                f"{membro.mention} — "
+                "Levantem suas calças!! Fechem seus zipers!! e GO-GO-GO! o matador de esperma chegou"
+            )
+        case _:  # 🔧 CASO PADRÃO - funciona para qualquer outro nome
+            mensagem = (
+                f"{membro.mention} — "
+                "Você é irrelevante demais pra tá aqui, volta a jogar Free Fire!"
+            )
 
     # Enviar a mensagem pública no canal onde o comando foi usado
     await interaction.followup.send(mensagem)
@@ -670,6 +694,7 @@ async def zoar(interaction: discord.Interaction, membro: discord.Member):
 # ;
 # ;
 # ;
+
 
 @bot.tree.command(name="membros", description="Lista todos os membros da guilda LOUCOS POR PVE")
 async def membros(interaction: discord.Interaction):
@@ -2064,6 +2089,408 @@ async def troca(interaction: discord.Interaction, destinatario: str, valor: int)
     embed.add_field(name="Saldo do destinatário", value=f"{destinatario_limpo}: {obter_pontuacao(destinatario_limpo)} pontos", inline=False)
     embed.set_footer(text="dê /consultar_pontuação (@nickname) para ver seu saldo atualizado.")
     await interaction.followup.send(embed=embed)
+    # ;
+tickets_recrutamento = {}
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ----------------------------------------- SISTEMA DE RECRUTAMENTO PARA TICKETS ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+@bot.event
+async def on_guild_channel_create(channel):
+    """Monitora a criação de canais e inicia processo de recrutamento para tickets"""
+    
+    # Verificar se é um canal de texto
+    if not isinstance(channel, discord.TextChannel):
+        return
+    
+    # Verificar se o nome do canal começa com "ticket-"
+    if not channel.name.lower().startswith("ticket-"):
+        return
+    
+    print(f"[TICKET] Novo ticket criado: {channel.name} (ID: {channel.id})")
+    
+    try:
+        # Aguardar um pouco para garantir que o canal está totalmente criado
+        await asyncio.sleep(2)
+        
+        # Inicializar estado do ticket
+        tickets_recrutamento[channel.id] = {
+            "etapa": "boas_vindas",
+            "dados": {}
+        }
+        
+        # Enviar mensagem de boas-vindas personalizada
+        mensagem_boas_vindas = (
+            f"🏰 **BEM-VINDO AO PROCESSO DE RECRUTAMENTO - LOUCOS POR PVE!**\n\n"
+            f"Olá! Seja muito bem-vindo(a) ao nosso servidor, você está no ticket: {channel.mention}!\n\n"
+            f"📋 **INFORMAÇÕES IMPORTANTES:**\n"
+            f"• Nossa guild **NÃO aceita menores de 18 anos**\n"
+            f"• Para players com **menos de 30M de fama total**, é necessário ter **indicação de um membro**\n\n"
+            f"❓ **PRIMEIRA PERGUNTA:**\n"
+            f"Você foi **indicado** por algum membro da nossa guild?\n\n"
+            f"🔹 Responda **SIM** se foi indicado por alguém\n"
+            f"🔹 Responda **NÃO** se não foi indicado por ninguém"
+        )
+        
+        await channel.send(mensagem_boas_vindas)
+        
+        print(f"[TICKET] Processo de recrutamento iniciado para {channel.name}")
+        
+    except discord.Forbidden:
+        print(f"[TICKET] Sem permissão para enviar mensagem no canal {channel.name}")
+    except Exception as e:
+        print(f"[TICKET] Erro ao iniciar recrutamento: {e}")
+
+@bot.event
+async def on_message(message):
+    # Ignorar mensagens do próprio bot
+    if message.author.bot:
+        return
+
+    # Verificar se é em um canal de ticket
+    if (isinstance(message.channel, discord.TextChannel) and 
+        message.channel.name.lower().startswith("ticket-") and
+        message.channel.id in tickets_recrutamento):
+        
+        await processar_etapa_recrutamento(message)
+    
+    # Código existente para outros canais
+    if message.channel.name == "🎁・dg-beneficente":
+        # ... código existente ...
+        pass
+    
+    await bot.process_commands(message)
+
+async def processar_etapa_recrutamento(message):
+    """Processa cada etapa do recrutamento"""
+    channel = message.channel
+    user = message.author
+    content = message.content.strip().upper()
+    
+    ticket_data = tickets_recrutamento[channel.id]
+    etapa_atual = ticket_data["etapa"]
+    
+    print(f"[RECRUTAMENTO] Canal: {channel.name}, Etapa: {etapa_atual}, Mensagem: {content}")
+    
+    try:
+        if etapa_atual == "boas_vindas":
+            if content in ["SIM", "S"]:
+                # Usuário foi indicado - mostrar select com membros
+                await processar_indicacao_sim(channel, user)
+            elif content in ["NÃO", "NAO", "N"]:
+                # Usuário não foi indicado - continuar para próxima etapa
+                await processar_indicacao_nao(channel, user)
+            else:
+                await channel.send(
+                    f"❌ **Por favor, responda apenas:**\n"
+                    f"• **SIM** - se foi indicado por alguém\n"
+                    f"• **NÃO** - se não foi indicado por ninguém"
+                )
+        
+        elif etapa_atual == "aguardando_indicador":
+            # Aguardando seleção do indicador (será processado pelo select menu)
+            pass
+        
+        elif etapa_atual == "aguardando_print":
+            if content == "PRONTO":
+                await processar_print_enviado(channel, user)
+            else:
+                await channel.send(
+                    f"📸 **Ainda aguardando seu print dos status!**\n\n"
+                    f"Envie a imagem primeiro e depois escreva **PRONTO** para continuar."
+                )
+        
+        elif etapa_atual == "aguardando_aplicacao":
+            if content == "PRONTO":
+                await processar_aplicacao_feita(channel, user)
+            else:
+                await channel.send(
+                    f"⏳ **Ainda aguardando você se aplicar!**\n\n"
+                    f"Primeiro se aplique em uma das guilds e depois escreva **PRONTO** para continuar."
+                )
+        
+        elif etapa_atual == "aguardando_recrutador":
+            if content == "PRONTO":
+                # Verificar se quem escreveu "PRONTO" é um recrutador
+                member = user
+                if any("recrutador" in role.name.lower() for role in member.roles):
+                    await processar_tutorial_final(channel, user)
+                else:
+                    await channel.send(
+                        f"😄 **kkkkk boa tentativa!**\n\n"
+                        f"Mas quem precisa te aceitar é um **recrutador**, por favor aguarde enquanto um recrutador aceita sua aplicação :D\n\n"
+                        f"🔍 **Status:** Aguardando aprovação de um membro com TAG de **Recrutador**"
+                    )
+            else:
+                await channel.send(
+                    f"⏳ **Aguardando aprovação do recrutador...**\n\n"
+                    f"Após ser aceito na guild, um recrutador vai vir e escrever **PRONTO** para que vocÊ possa ver o tutorial final."
+                )
+    
+    except Exception as e:
+        print(f"[RECRUTAMENTO] Erro ao processar etapa: {e}")
+
+async def processar_indicacao_sim(channel, user):
+    """Usuário disse que foi indicado - mostrar select com membros"""
+    
+    # Buscar todos os membros da guild
+    guild = channel.guild
+    membros_opcoes = []
+    
+    # Pegar membros com roles específicas (ajuste conforme necessário)
+    for member in guild.members:
+        if not member.bot and any(role.name.lower() in ["louco por pve", "membro"] for role in member.roles):
+            membros_opcoes.append(discord.SelectOption(
+                label=member.display_name[:100],  # Discord tem limite de 100 chars
+                value=str(member.id)
+            ))
+    
+    # Limitar a 25 opções (limite do Discord)
+    if len(membros_opcoes) > 25:
+        membros_opcoes = membros_opcoes[:25]
+    
+    if not membros_opcoes:
+        await channel.send(
+            f"❌ **Erro:** Não foi possível carregar a lista de membros.\n"
+            f"Por favor, contate um administrador."
+        )
+        return
+    
+    view = IndicadorSelectView(membros_opcoes)
+    
+    await channel.send(
+        f"👥 **ÓTIMO! Você foi indicado por alguém.**\n\n"
+        f"Selecione abaixo **quem te indicou** para nossa guild:",
+        view=view
+    )
+    
+    tickets_recrutamento[channel.id]["etapa"] = "aguardando_indicador"
+
+async def processar_indicacao_nao(channel, user):
+    """Usuário disse que não foi indicado - pedir print dos status"""
+    await pedir_print_status(channel, user)
+
+async def processar_indicador_selecionado(channel, user, indicador_member):
+    """Processa quando o indicador foi selecionado"""
+    tickets_recrutamento[channel.id]["dados"]["indicador"] = indicador_member.display_name
+    
+    await channel.send(
+        f"✅ **Perfeito!**\n\n"
+        f"Você foi indicado por: **{indicador_member.display_name}**\n\n"
+        f"Agora vamos continuar com o processo..."
+    )
+    
+    await asyncio.sleep(2)
+    await pedir_print_status(channel, user)
+
+async def pedir_print_status(channel, user):
+    """Pede para o usuário enviar print dos status do jogo"""
+    
+    # Aqui você pode colocar uma imagem de exemplo se tiver
+    exemplo_texto = "*(envie uma imagem similar ao exemplo abaixo)*"  # Substituir por imagem real se tiver
+    img = "tutorial_tipos.png"
+    
+    mensagem_print = (
+        f"📸 **ETAPA 2: PRINT DOS SEUS STATUS**\n\n"
+        f"Agora preciso que você envie um **print/screenshot** dos seus status dentro do Albion Online.\n\n"
+        f"📋 **Como fazer:**\n"
+        f"• Abra o Albion Online\n"
+        f"• Vá na tela de atributos/estatísticas do seu personagem\n"
+        f"• Tire um print/screenshot\n"
+        f"• Envie a imagem aqui no chat\n\n"
+        f"⚠️ **Após enviar a imagem, escreva** `PRONTO` **para continuar!**"
+    )
+    
+    # Enviar mensagem de exemplo se a imagem existir
+    if os.path.exists(img):
+        file1 = discord.File(img, filename=img)
+        embed1 = discord.Embed(
+            title="📸 Exemplo de Print dos Status",
+            description=exemplo_texto,
+            color=0x00ff00
+        )
+        embed1.set_image(url=f"attachment://{img}")
+    
+    # Enviar a mensagem principal
+    await channel.send(mensagem_print)
+    await channel.send(embed=embed1, file=file1)
+    tickets_recrutamento[channel.id]["etapa"] = "aguardando_print"
+
+async def processar_print_enviado(channel, user):
+    """Processa quando o print foi enviado"""
+    
+    await channel.send(
+        f"✅ **Print recebido com sucesso!**\n\n"
+        f"Analisando suas informações... Vamos para a próxima etapa!"
+    )
+    
+    await asyncio.sleep(2)
+    await pedir_aplicacao_guild(channel, user)
+
+async def pedir_aplicacao_guild(channel, user):
+    """Pede para o usuário se aplicar em uma das guilds"""
+    
+    mensagem_aplicacao = (
+        f"🏰 **ETAPA 3: APLICAÇÃO NA GUILD**\n\n"
+        f"Agora você deve se aplicar em uma das nossas 3 guilds:\n\n"
+        f"🔹 **LOUCOS POR PVE** - Guild principal\n"
+        f"🔹 **INSANOS POR PVE** - Guild secundária\n"
+        f"🔹 **FANÁTICOS POR PVE** - Guild terciária\n\n"
+        f"📋 **Como fazer:**\n"
+        f"• Abra o Albion Online\n"
+        f"• Vá no menu de Guilds\n"
+        f"• Procure por uma das guilds acima\n"
+        f"• Clique em 'Aplicar' ou 'Join'\n\n"
+        f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu e depois** `PRONTO`\n\n"
+        f"**Exemplo:** `LOUCOS POR PVE` e depois `PRONTO`"
+    )
+    
+    await channel.send(mensagem_aplicacao)
+    tickets_recrutamento[channel.id]["etapa"] = "aguardando_aplicacao"
+
+async def processar_aplicacao_feita(channel, user):
+    """Processa quando a aplicação foi feita"""
+    
+    await channel.send(
+        f"✅ **Aplicação confirmada!**\n\n"
+        f"Agora vou notificar nossos recrutadores para que aprovem sua entrada na guild."
+    )
+    
+    await asyncio.sleep(2)
+    await notificar_recrutadores(channel, user)
+
+async def notificar_recrutadores(channel, user):
+    """Notifica recrutadores sobre o novo candidato"""
+    
+    guild = channel.guild
+    recrutadores = []
+    
+    # Buscar membros com role "Recrutador"
+    for member in guild.members:
+        if any("recrutador" in role.name.lower() for role in member.roles):
+            recrutadores.append(member)
+    
+    if recrutadores:
+        mensagem_notificacao = (
+            f"🔔 **NOVO CANDIDATO PRONTO PARA APROVAÇÃO!**\n\n"
+            f"Ticket: {channel.mention}\n"
+            f"Candidato: {user.mention}\n\n"
+            f"✅ O candidato já completou todas as etapas do processo e está aguardando aprovação na guild.\n\n"
+            f"📋 **Próximos passos:**\n"
+            f"• Revisar aplicação na guild dentro do jogo\n"
+            f"• Aprovar o candidato\n"
+            f"• Após aprovação, escrever `PRONTO` no ticket"
+        )
+        
+        # Enviar DM para cada recrutador
+        for recrutador in recrutadores:
+            try:
+                await recrutador.send(mensagem_notificacao)
+                print(f"[RECRUTAMENTO] DM enviado para recrutador: {recrutador.display_name}")
+            except discord.Forbidden:
+                print(f"[RECRUTAMENTO] Não foi possível enviar DM para: {recrutador.display_name}")
+        
+        # Também postar no canal do ticket
+        await channel.send(
+            f"📢 **RECRUTADORES NOTIFICADOS!**\n\n"
+            f"Nossos recrutadores foram notificados sobre sua aplicação.\n"
+            f"Aguarde a aprovação dentro do jogo.\n\n"
+            f"⏳ **Recrutador, por favor, escreva** `PRONTO` **para que o novo membro possa ver o tutorial final!**"
+        )
+    else:
+        await channel.send(
+            f"❌ **Erro:** Não foi possível encontrar recrutadores online.\n"
+            f"Por favor, aguarde ou contate um administrador."
+        )
+    
+    tickets_recrutamento[channel.id]["etapa"] = "aguardando_recrutador"
+
+async def processar_tutorial_final(channel, user):
+    """Mostra o tutorial final para o novo membro"""
+    
+    tutorial_final = (
+        f"🎉 **PARABÉNS! VOCÊ FOI ACEITO NA GUILD!**\n\n"
+        f"Bem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
+        f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
+        f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
+        f"🔹 **Digite o comando:** `/registro`\n"
+        f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
+        f"📋 **Exemplo:**\n"
+        f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
+        f"✅ **Após o registro você terá acesso a:**\n"
+        f"• Canais exclusivos da guild\n"
+        f"• Sistema de pontuação\n"
+        f"• DGs beneficentes\n"
+        f"• Eventos e sorteios\n\n"
+        f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
+        f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
+    )
+    
+    await channel.send(tutorial_final)
+    
+    # Limpar dados do ticket
+    if channel.id in tickets_recrutamento:
+        del tickets_recrutamento[channel.id]
+    
+    print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ----------------------------------------- CLASSES PARA SELECT MENU ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+class IndicadorSelectView(discord.ui.View):
+    def __init__(self, opcoes_membros):
+        super().__init__(timeout=300)  # 5 minutos
+        self.add_item(IndicadorSelectMenu(opcoes_membros))
+
+class IndicadorSelectMenu(discord.ui.Select):
+    def __init__(self, opcoes_membros):
+        super().__init__(
+            placeholder="Selecione quem te indicou...",
+            options=opcoes_membros,
+            min_values=1,
+            max_values=1
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Buscar o membro selecionado
+        member_id = int(self.values[0])
+        indicador_member = interaction.guild.get_member(member_id)
+        
+        if indicador_member:
+            await interaction.response.send_message(
+                f"✅ **Indicador selecionado:** {indicador_member.display_name}",
+                ephemeral=True
+            )
+            
+            # Processar a seleção
+            await processar_indicador_selecionado(
+                interaction.channel, 
+                interaction.user, 
+                indicador_member
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Erro ao encontrar o membro selecionado.",
+                ephemeral=True
+            )
 
 
 # ;
@@ -2364,14 +2791,13 @@ async def agendar_atualizacao_patrocinadores():
 
         # Após enviar a notificação, não atualizar imediatamente (o reset só ocorre no domingo)
 
-# Guardará temporariamente os dados antes de finalizar
-conteudo_em_aberto = None
 class FuncoesEquipeView(discord.ui.View):
-    def __init__(self, membros, interaction_user):
+    def __init__(self, membros, interaction_user, user_id):
         super().__init__(timeout=120)
         self.membros = membros
         self.roles = {m: "DPS" for m in membros}
         self.interaction_user = interaction_user
+        self.user_id = user_id
         self.tank_set = False
         self.healer_set = False
         self.interaction = None
@@ -2380,75 +2806,157 @@ class FuncoesEquipeView(discord.ui.View):
         for membro in membros:
             self.add_item(FuncoesEquipeButton(membro, self))
         
-        # Adicionar botão de finalizar
         self.add_item(FinalizarButton())
 
-    async def update_embed(self, interaction: discord.Interaction):
+    async def on_timeout(self):
+        """Limpar dados quando a view expira"""
+        if self.user_id in conteudos_em_aberto:
+            del conteudos_em_aberto[self.user_id]
+        
+        # Desabilitar todos os botões
+        for item in self.children:
+            item.disabled = True
+        
+        if hasattr(self, "message") and self.message:
+            embed_timeout = discord.Embed(
+                title="⏰ Comando Expirado",
+                description="O comando expirou por inatividade. Use `/dg_beneficente` novamente.",
+                color=0x888888
+            )
+            try:
+                await self.message.edit(embed=embed_timeout, view=self)
+            except Exception:
+                pass
+
+    async def update_embed(self, interaction):
+        """Atualizar o embed com as funções atuais"""
+        # Buscar dados específicos deste usuário
+        user_id = self.user_id
+        if user_id not in conteudos_em_aberto:
+            try:
+                await interaction.response.send_message(
+                    "❌ Dados do comando não encontrados.", ephemeral=True
+                )
+            except:
+                pass
+            return
+
+        conteudo_dados = conteudos_em_aberto[user_id]
+        tipo_valor = conteudo_dados["tipo"]
+        
+        # Buscar ícone e nome formatado do tipo
+        icone = icones.get(tipo_valor, "📋")
+        
         embed = discord.Embed(
-            title="📊 PRÉVIA DE PONTUAÇÃO",
-            description="Clique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
+            title=f"📊 PRÉVIA DE PONTUAÇÃO",
+            description=f"{icone} **{tipo_valor}**\n\nClique nos botões abaixo para definir Tank e Healer.\nQuando terminar, clique em **Finalizar**.",
             color=0xffa500
         )
+        
+        # Limpar fields existentes
+        embed.clear_fields()
+        
+        # Adicionar cada membro com sua função atual
         for membro in self.membros:
             funcao = self.roles[membro]
-            emoji = "🛡️" if funcao == "TANK" else "💚" if funcao == "HEALER" else "⚔️"
+            if funcao == "TANK":
+                emoji = "🛡️"
+            elif funcao == "HEALER":
+                emoji = "💚"
+            else:
+                emoji = "⚔️"
+            
             embed.add_field(
                 name=f"{emoji} {membro}",
                 value=f"Função: **{funcao}**",
                 inline=False
             )
-        # Atualiza o embed na mensagem já existente, se possível
-        if hasattr(self, "message") and self.message:
+        
+        # Atualizar a mensagem original e responder ao select
+        try:
             await self.message.edit(embed=embed, view=self)
-            # Fecha o select sem criar novo embed/ephemeral
+            # Responder ao select menu
             try:
-                await interaction.response.defer()
-            except Exception:
-                pass
+                await interaction.response.send_message(
+                    f"✅ Função atualizada com sucesso!", 
+                    ephemeral=True
+                )
+            except:
+                try:
+                    await interaction.followup.send(
+                        f"✅ Função atualizada com sucesso!", 
+                        ephemeral=True
+                    )
+                except:
+                    pass
+        except Exception as e:
+            print(f"[ERROR] Erro ao atualizar embed: {e}")
+            try:
+                await interaction.response.send_message(
+                    "✅ Função atualizada!", ephemeral=True
+                )
+            except:
+                try:
+                    await interaction.followup.send(
+                        "✅ Função atualizada!", ephemeral=True
+                    )
+                except:
+                    pass
+
 
 class FinalizarButton(discord.ui.Button):
     def __init__(self):
         super().__init__(label="✅ Finalizar", style=discord.ButtonStyle.success, row=4)
 
     async def callback(self, interaction: discord.Interaction):
+        global conteudos_em_aberto  # Adicionar esta linha
         resumo_texto = ""
-        global conteudo_em_aberto
-
+        
         if interaction.user != self.view.interaction_user:
             await interaction.response.send_message(
                 "❌ Apenas quem usou o comando pode finalizar.", ephemeral=True
             )
             return
 
+        # Buscar dados específicos deste usuário
+        user_id = self.view.user_id
+        if user_id not in conteudos_em_aberto:
+            await interaction.response.send_message(
+                "❌ Dados do comando não encontrados. Tente usar `/dg_beneficente` novamente.", 
+                ephemeral=True
+            )
+            return
+
+        conteudo_em_aberto_dados = conteudos_em_aberto[user_id]  # Corrigir esta linha
+
         # Calcular pontuação
         pontuacao = {}
-        caller_nome = conteudo_em_aberto["caller"]
-        tipo_conteudo = conteudo_em_aberto["tipo"]  # NOVO: pegar o tipo do conteúdo
-        # CORRIGIDO: Filtrar membros para excluir o caller
-
+        caller_nome = conteudo_em_aberto_dados["caller"]  # Usar a variável corrigida
+        tipo_conteudo = conteudo_em_aberto_dados["tipo"]   # Usar a variável corrigida
         membros_sem_caller = [m for m in self.view.membros if m != caller_nome]
 
         for membro in membros_sem_caller:
             funcao = self.view.roles[membro]
             if funcao in ["TANK", "HEALER"]:
                 pontos = 2
-            else:  # DPS
+            else:
                 pontos = 1
             pontuacao[membro] = {"funcao": funcao, "pontos": pontos}
 
         # NOVO: Verificar se o tipo é "PONTUAÇÃO" e penalizar o caller
         if tipo_conteudo == "PONTUAÇÃO":
-            remover_pontos(caller_nome, 10)  # Caller perde 10 pontos
+            remover_pontos(caller_nome, 10)
             penalidade_texto = f"**Caller: ** 👑 {caller_nome}  ⛔10 pontos (PONTUAÇÃO)"
         else:
             penalidade_texto = f"**Caller: ** 👑 {caller_nome} (não recebe pontos)"
 
         if tipo_conteudo == "SORTEIO":
-            remover_sorteio(caller_nome)  # Remover o caller da lista de sorteios
+            remover_sorteio(caller_nome)
             penalidade_texto += " | Sorteio removido da lista. você não pode ser soteado novamente em 3 dias."
         if tipo_conteudo == "PATROCIONADOR":
-            remover_patrocinios(caller_nome)  # Remover o caller da lista de patrocinadores
+            remover_patrocinios(caller_nome)
             penalidade_texto += " | Patrocínio removido da lista. recarga na proxima semana!."
+
         # Criar embed final formatado
         embed_final = discord.Embed(
             title="✅ DG BENEFICIENTE FINALIZADA",
@@ -2471,7 +2979,7 @@ class FinalizarButton(discord.ui.Button):
             elif funcao == "HEALER":
                 healer_info = f"💚 **{membro}** → +{pontos} pts"
                 adicionar_pontos(membro, pontos)
-            else:  # DPS
+            else:
                 if dps_info:
                     dps_info += f"\n⚔️ **{membro}** → +{pontos} pts"
                     adicionar_pontos(membro, pontos)
@@ -2525,8 +3033,10 @@ class FinalizarButton(discord.ui.Button):
         
         await self.view.interaction.edit_original_response(embed=embed_concluido, view=self.view)
         
-        # Limpar conteúdo em aberto
-        conteudo_em_aberto = None
+        # Limpar dados específicos deste usuário
+        if user_id in conteudos_em_aberto:
+            del conteudos_em_aberto[user_id]
+            
         # Fechar todas as mensagens ephemeral individuais
         for membro, msg in getattr(self.view, "mensagens_ephemeral", {}).items():
             try:
@@ -2577,36 +3087,42 @@ class FuncoesEquipeSelectMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         escolha = self.values[0]
-        # Atualiza funções
+        
+        # Resetar flags de tank/healer se necessário
         if escolha == "TANK":
+            # Se já existe um tank, transformá-lo em DPS
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "TANK":
                     self.parent_view.roles[m] = "DPS"
-                if self.parent_view.roles[m] == "HEALER" and m == self.membro:
-                    self.parent_view.roles[m] = "TANK"
-                    self.parent_view.healer_set = False
+            # Se este membro era healer, resetar flag de healer
+            if self.parent_view.roles[self.membro] == "HEALER":
+                self.parent_view.healer_set = False
+            # Definir como tank
             self.parent_view.roles[self.membro] = "TANK"
             self.parent_view.tank_set = True
+            
         elif escolha == "HEALER":
+            # Se já existe um healer, transformá-lo em DPS
             for m in self.parent_view.membros:
                 if self.parent_view.roles[m] == "HEALER":
                     self.parent_view.roles[m] = "DPS"
-                if self.parent_view.roles[m] == "TANK" and m == self.membro:
-                    self.parent_view.roles[m] = "HEALER"
-                    self.parent_view.tank_set = False
+            # Se este membro era tank, resetar flag de tank
+            if self.parent_view.roles[self.membro] == "TANK":
+                self.parent_view.tank_set = False
+            # Definir como healer
             self.parent_view.roles[self.membro] = "HEALER"
             self.parent_view.healer_set = True
+            
         elif escolha == "DPS":
+            # Se era tank ou healer, resetar as flags correspondentes
             if self.parent_view.roles[self.membro] == "TANK":
-                self.parent_view.roles[self.membro] = "DPS"
                 self.parent_view.tank_set = False
             elif self.parent_view.roles[self.membro] == "HEALER":
-                self.parent_view.roles[self.membro] = "DPS"
                 self.parent_view.healer_set = False
-        else:
+            # Definir como DPS
             self.parent_view.roles[self.membro] = "DPS"
 
-        # ⚡ Aqui: usar a interação do select para atualizar embed
+        # Atualizar o embed principal
         await self.parent_view.update_embed(interaction)
 
 # Função para converter valores abreviados (17M, 5K, etc) em números
