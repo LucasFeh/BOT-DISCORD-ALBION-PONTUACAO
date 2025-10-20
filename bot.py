@@ -35,15 +35,15 @@ GUILD_ID = "QDufxXRfSiydcD58_Lo9KA"
 
 # Dicionário de pontuação por conteúdo
 PONTOS_POR_CONTEUDO = {
-    "DG BENEFICIENTE": 10,
-    "MONTARIA - (600k)": 20,
-    "RE-GEAR (4M)": 30,
-    "ARMA 4.4": 50,
-    "MONTARIA (1.5M)": 60,
-    "MONTARIA (4M)": 80,
-    "PRATA (5M)": 90,
-    "ARMA 8.3": 250,
-    # "MAMUTE": 4000
+    "DG BENEFICIENTE": 20,
+    "MONTARIA - (600k)": 30,
+    "RE-GEAR (4M)": 40,
+    "ARMA 4.4": 60,
+    "MONTARIA (1.5M)": 70,
+    "MONTARIA (4M)": 90,
+    "PRATA (5M)": 100,
+    "ARMA 8.3": 300,
+    "ARMA 8.4": 5500,
     # você pode adicionar mais tipos depois
 }
 
@@ -59,6 +59,7 @@ icones = {
     "MONTARIA - (600k)": "🐎",
     "RE-GEAR (4M)": "🛡️",
     "ARMA 4.4": "🗡️",
+    "ARMA 8.4": "🗡️",
     "MONTARIA (1.5M)": "🐎",
     "MONTARIA (4M)": "🐎",
     "PRATA (5M)": "💰",
@@ -2309,7 +2310,7 @@ async def agendar_atualizacao_patrocinadores():
         now = datetime.datetime.now(tz)
 
         # Define próxima execução para hoje às 16:00, ou amanhã se já passou
-        proxima_execucao = now.replace(hour=16, minute=0, second=0, microsecond=0)
+        proxima_execucao = now.replace(hour=0, minute=0, second=0, microsecond=0)
         if proxima_execucao <= now:
             proxima_execucao += datetime.timedelta(days=1)
 
@@ -2320,7 +2321,7 @@ async def agendar_atualizacao_patrocinadores():
 
         print(f"[TAREFA] Próxima notificação de patrocinadores agendada para {proxima_execucao} (em {segundos_ate_execucao:.0f}s)")
 
-        # Espera até 16:00
+        # Espera até 00:00
         await asyncio.sleep(segundos_ate_execucao)
 
         # Ao acordar, se for domingo (weekday==6), resetar a lista de patrocinadores
@@ -2526,7 +2527,6 @@ class FinalizarButton(discord.ui.Button):
         
         # Limpar conteúdo em aberto
         conteudo_em_aberto = None
-        
         # Fechar todas as mensagens ephemeral individuais
         for membro, msg in getattr(self.view, "mensagens_ephemeral", {}).items():
             try:
