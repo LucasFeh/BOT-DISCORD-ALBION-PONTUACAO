@@ -169,6 +169,11 @@ async def on_message(message):
     
 @bot.tree.command(name="recompensas", description="Mostra a tabela de recompensas")
 async def recompensas(interaction: discord.Interaction):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
+
     embed = discord.Embed(
         title="📊 TABELA DE RECOMPENSAS - LOUCOS POR PVE [PVE]",
         description="Sistema de recompensas para membros da guilda.\n\n",
@@ -223,6 +228,11 @@ async def dg_beneficente(
     tipo: app_commands.Choice[str],
     integrantes: str
 ):
+    
+
+    if await permitir_comando_apenas_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, não está no canal permitido e o comando deve parar
+
     try:
         await safe_defer(interaction)
     except Exception as e:
@@ -414,6 +424,11 @@ async def dg_beneficente(
     quantidade_de_membros="Número de pessoas para dividir"
 )
 async def split(interaction: discord.Interaction, valor: str, quantidade_de_membros: int):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
+
     try:
         # Converter valor abreviado para número
         valor_original = valor  # Guardar o valor original para exibir
@@ -542,7 +557,12 @@ async def tutorial_dg(interaction: discord.Interaction):
     Procura por imagens locais (tutorial_tipos.png, tutorial_nomes.png, tutorial_roles.png)
     e as anexa aos embeds se existirem.
     """
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
+
+
+
 
     # Parte 1: Selecionar o tipo da DG
     embed1 = discord.Embed(
@@ -618,7 +638,14 @@ async def tutorial_dg(interaction: discord.Interaction):
 @bot.tree.command(name="zoar", description="Zoar um membro com uma mensagem personalizada")
 @app_commands.describe(membro="Membro a ser zoado (menção ou nome)")
 async def zoar(interaction: discord.Interaction, membro: discord.Member):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+    
     await safe_defer(interaction)
+
+
+
 
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -937,7 +964,13 @@ async def botinfo(ctx):
 )
 async def addpontos(interaction: discord.Interaction, integrantes: str, pontos: int):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+    
     await safe_defer(interaction)
+
+
+
 
         # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -1035,11 +1068,12 @@ async def addpontos(interaction: discord.Interaction, integrantes: str, pontos: 
 # ;
 
 
-
-
 @bot.tree.command(name="consultar_pontuação", description="Consulta a pontuação de um membro")
 @app_commands.describe(membro="Nome do membro para consultar")
 async def pontos(interaction: discord.Interaction, membro: str):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
 
     await safe_defer(interaction)
 
@@ -1090,7 +1124,6 @@ async def pontos(interaction: discord.Interaction, membro: str):
     await interaction.followup.send(embed=embed)
 
 
-
 # ;
 # ;
 # ;
@@ -1109,6 +1142,11 @@ async def pontos(interaction: discord.Interaction, membro: str):
 @bot.tree.command(name="ranking", description="Mostra o ranking completo de pontuação")
 async def ranking(interaction: discord.Interaction):
     ranking_completo = obter_ranking()
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
+
     
     if not ranking_completo:
         embed = discord.Embed(
@@ -1177,7 +1215,12 @@ async def ranking(interaction: discord.Interaction):
 )
 async def removerpontos(interaction: discord.Interaction, integrantes: str, pontos: int):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
+
+
+
 
         # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -1280,7 +1323,12 @@ async def removerpontos(interaction: discord.Interaction, integrantes: str, pont
 )
 async def remover_membro_pontos(interaction: discord.Interaction, integrantes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
+
+
 
     
     # Verificar se o usuário tem permissão
@@ -1354,14 +1402,15 @@ async def remover_membro_pontos(interaction: discord.Interaction, integrantes: s
 # ;
 # ;
 
-
-
-
 @bot.tree.command(name="add_sorteio", description="Adiciona uma pessoa à lista de sorteios")
 @app_commands.describe(nomes="Nomes das pessoas ou @mention que ganharam o sorteio")
 async def add_sorteio(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
+
+
 
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -1464,7 +1513,11 @@ async def add_sorteio(interaction: discord.Interaction, nomes: str):
 @app_commands.describe(nomes="Nomes das pessoas ou @mention que ganharam o patrocinio")
 async def add_patrocinio(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
+
+
 
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -1565,7 +1618,11 @@ async def add_patrocinio(interaction: discord.Interaction, nomes: str):
 @app_commands.describe(nomes="Nome da pessoa ou @mention para remover da lista")
 async def remover_patrocinio(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
     await safe_defer(interaction)
+
 
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
@@ -1664,8 +1721,12 @@ async def remover_patrocinio(interaction: discord.Interaction, nomes: str):
 @app_commands.describe(nomes="Nome da pessoa ou @mention para remover da lista")
 async def remover_sorteios(interaction: discord.Interaction, nomes: str):
     # 🚀 RESPONDER IMEDIATAMENTE
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
     await safe_defer(interaction)
 
+
+    
     # Validar que todos os integrantes fornecidos são mentions no formato <@123> ou <@!123>
     invalid_tokens = []
     mention_pattern = re.compile(r"^<@!?(\d+)>$")
@@ -1763,6 +1824,10 @@ async def remover_sorteios(interaction: discord.Interaction, nomes: str):
 
 @bot.tree.command(name="listar_patrocinadores", description="Lista todos os patrocinadores atuais")
 async def listar_patrocinadores(interaction: discord.Interaction):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
     patrocinadores = carregar_patrocinadores()
 
     if not patrocinadores:
@@ -1804,6 +1869,10 @@ async def listar_patrocinadores(interaction: discord.Interaction):
 
 @bot.tree.command(name="listar_sorteios", description="Lista todas as pessoas que ganharam sorteios")
 async def listar_sorteios(interaction: discord.Interaction):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
     sorteios = carregar_sorteios()
     
     if not sorteios:
@@ -1846,6 +1915,10 @@ async def listar_sorteios(interaction: discord.Interaction):
 
 @bot.tree.command(name="listar_pontuacao", description="Mostra a lista completa de todos os membros e seus pontos")
 async def listar_pontuacao(interaction: discord.Interaction):
+
+    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
+        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+
     pontuacao = obter_toda_pontuacao()
     if not pontuacao:
         embed = discord.Embed(
@@ -2200,45 +2273,74 @@ async def processar_etapa_recrutamento(message):
                 )
         
         elif etapa_atual == "aguardando_indicador":
-            # Aguardando seleção do indicador (será processado pelo select menu)
-            pass
+            if content == "PRONTO":
+                await processar_indicacao_nao(channel, user)
         
         elif etapa_atual == "aguardando_print":
-            if content == "PRONTO":
-                await processar_print_enviado(channel, user)
-            else:
-                await channel.send(
-                    f"📸 **Ainda aguardando seu print dos status!**\n\n"
-                    f"Envie a imagem primeiro e depois escreva **PRONTO** para continuar."
-                )
+                # Verificar se a mensagem tem anexos de imagem
+                if message.attachments:
+                    # Verificar se pelo menos um anexo é uma imagem
+                    imagens_encontradas = []
+                    for attachment in message.attachments:
+                        if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+                            imagens_encontradas.append(attachment.filename)
+                    
+                    if imagens_encontradas:
+                        # Marcar que a imagem foi enviada
+                        tickets_recrutamento[channel.id]["dados"]["print_enviado"] = True
+                        
+                        await channel.send(
+                            f"✅ **Imagem recebida!**\n\n"
+                            f"Print dos status detectado: `{', '.join(imagens_encontradas)}`\n\n"
+                            f"Agora escreva **PRONTO** para continuar para a próxima etapa."
+                        )
+                    else:
+                        await channel.send(
+                            f"❌ **Arquivo não é uma imagem válida!**\n\n"
+                            f"Por favor, envie uma imagem dos seus status (PNG, JPG, GIF, etc.) e depois escreva **PRONTO**."
+                        )
+                
+                elif content == "PRONTO":
+                    # Verificar se já foi enviada uma imagem
+                    print_enviado = ticket_data.get("dados", {}).get("print_enviado", False)
+                    
+                    if print_enviado:
+                        await processar_print_enviado(channel, user)
+                    else:
+                        await channel.send(
+                            f"⚠️ **Ops! Você ainda não enviou o print dos seus status!**\n\n"
+                            f"📸 Por favor, primeiro envie uma **imagem/screenshot** dos seus status do Albion Online.\n"
+                            f"Depois disso, escreva **PRONTO** para continuar.\n\n"
+                            f"💡 **Lembre-se:** A imagem deve mostrar suas estatísticas/atributos do personagem no jogo."
+                        )
+                else:
+                    await channel.send(
+                        f"📸 **Ainda aguardando seu print dos status!**\n\n"
+                        f"• Primeiro: Envie uma **imagem** dos seus status do Albion Online\n"
+                        f"• Depois: Escreva **PRONTO** para continuar\n\n"
+                        f"💡 **Formatos aceitos:** PNG, JPG, JPEG, GIF, WEBP"
+                    )
+
         elif etapa_atual == "aguardando_aplicacao":
             if content == "PRONTO" and aplicou == True:
                 await processar_aplicacao_feita(channel, user)
             elif content == "LOUCOS POR PVE":
                 tickets_recrutamento[channel.id]["aplicou"] = True
                 await channel.send(
-                    f"✅ **Perfeito!**\n\n"
-                    f"Vejo que você já se aplicou para nossa guild \"**LOUCOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**LOUCOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
                 )
             elif content == "INSANOS POR PVE":
                 tickets_recrutamento[channel.id]["aplicou"] = True
                 await channel.send(
-                    f"✅ **Perfeito!**\n\n"
-                    f"Vejo que você já se aplicou para nossa guild \"**ISANOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**ISANOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
                 )
             elif content == "FANATICOS POR PVE":
                 tickets_recrutamento[channel.id]["aplicou"] = True
                 await channel.send(
-                    f"✅ **Perfeito!**\n\n"
-                    f"Vejo que você já se aplicou para nossa guild \"**FANATICOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**FANATICOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
-                )
-            else:
-                await channel.send(
-                    f"⏳ **Vi que você ainda não especificou em qual guild se aplicou!**\n\n"
-                    f"Primeiro se aplique nas guildas e depois escreva **PRONTO** para continuar."
                 )
         
         elif etapa_atual == "aguardando_recrutador":
@@ -2253,66 +2355,22 @@ async def processar_etapa_recrutamento(message):
                         f"Mas quem precisa te aceitar é um **recrutador**, por favor aguarde enquanto um recrutador aceita sua aplicação :D\n\n"
                         f"🔍 **Status:** Aguardando aprovação de um membro com TAG de **Recrutador**"
                     )
-            else:
-                await channel.send(
-                    f"⏳ **Aguardando aprovação do recrutador...**\n\n"
-                    f"Após ser aceito na guild, um recrutador vai vir e escrever **PRONTO** para que vocÊ possa ver o tutorial final."
-                )
     
     except Exception as e:
         print(f"[RECRUTAMENTO] Erro ao processar etapa: {e}")
 
 async def processar_indicacao_sim(channel, user):
-    """Usuário disse que foi indicado - mostrar select com membros"""
-    
-    # Buscar todos os membros da guild
-    guild = channel.guild
-    membros_opcoes = []
-    
-    # Pegar membros com roles específicas (ajuste conforme necessário)
-    for member in guild.members:
-        if not member.bot and any(role.name.lower() in ["louco por pve", "membro"] for role in member.roles):
-            membros_opcoes.append(discord.SelectOption(
-                label=member.display_name[:100],  # Discord tem limite de 100 chars
-                value=str(member.id)
-            ))
-    
-    # Limitar a 25 opções (limite do Discord)
-    if len(membros_opcoes) > 25:
-        membros_opcoes = membros_opcoes[:25]
-    
-    if not membros_opcoes:
-        await channel.send(
-            f"❌ **Erro:** Não foi possível carregar a lista de membros.\n"
-            f"Por favor, contate um administrador."
-        )
-        return
-    
-    view = IndicadorSelectView(membros_opcoes)
-    
+
     await channel.send(
-        f"👥 **ÓTIMO! Você foi indicado por alguém.**\n\n"
-        f"Selecione abaixo **quem te indicou** para nossa guild:",
-        view=view
+        f"👥 **ÓTIMO! Você foi indicado por alguém.**\n"
+        f"*Por favor, digite quem foi que te indicou *\n"
+        f"`Lembre-se, com menos de 30M de fama, você só vai conseguir aprovação caso tenha sido indicado por alguém`\n\n"
+        f"**Caso esteja tudo pronto digite `PRONTO`**"
     )
-    
     tickets_recrutamento[channel.id]["etapa"] = "aguardando_indicador"
 
 async def processar_indicacao_nao(channel, user):
     """Usuário disse que não foi indicado - pedir print dos status"""
-    await pedir_print_status(channel, user)
-
-async def processar_indicador_selecionado(channel, user, indicador_member):
-    """Processa quando o indicador foi selecionado"""
-    tickets_recrutamento[channel.id]["dados"]["indicador"] = indicador_member.display_name
-    
-    await channel.send(
-        f"✅ **Perfeito!**\n\n"
-        f"Você foi indicado por: **{indicador_member.display_name}**\n\n"
-        f"Agora vamos continuar com o processo..."
-    )
-    
-    await asyncio.sleep(2)
     await pedir_print_status(channel, user)
 
 async def pedir_print_status(channel, user):
@@ -2352,8 +2410,8 @@ async def processar_print_enviado(channel, user):
     """Processa quando o print foi enviado"""
     
     await channel.send(
-        f"✅ **Print recebido com sucesso!**\n\n"
-        f"Analisando suas informações... Vamos para a próxima etapa!"
+        f"✅ **Confirmação recebida!**\n\n"
+        f"Vamos para a próxima etapa!"
     )
     
     await asyncio.sleep(2)
@@ -2361,25 +2419,52 @@ async def processar_print_enviado(channel, user):
 
 async def pedir_aplicacao_guild(channel, user):
     """Pede para o usuário se aplicar em uma das guilds"""
+    gif_tutorial = "tutorial_aplicacao_guild.gif"
     
     mensagem_aplicacao = (
         f"🏰 **ETAPA 3: APLICAÇÃO NA GUILD**\n\n"
         f"`Não temos guild principal todas tem o mesmo nivel de relevância`\n\n"
         f"Agora você deve se aplicar nas nossas 3 guildas:\n\n"
-        f"🔹 **LOUCOS POR PVE** \n"
-        f"🔹 **INSANOS POR PVE** \n"
-        f"🔹 **FANATICOS POR PVE**\n\n"
+        f"🔹 **LOUCOS POR PVE** `Cheio` \n"
+        f"🔹 **INSANOS POR PVE** `Cheio` \n"
+        f"🔹 **FANATICOS POR PVE** `Nova vazio - chance maior` \n\n"
         f"📋 **Como fazer:**\n"
         f"• Abra o Albion Online\n"
         f"• Vá no menu de Guilds\n"
         f"• Procure por uma das guilds acima\n"
         f"• Clique em 'Aplicar' ou 'Join'\n\n"
         f"*Aplique nas 3 para que sua aprovação seja mais rápida*\n\n"
-        f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu e depois** `PRONTO`\n\n"
-        f"**Exemplo:** `LOUCOS POR PVE` e depois `PRONTO`"
+        f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu\n\n"
+        f"**Exemplo:** `FANATICOS POR PVE`"
     )
+
     
+    # Enviar mensagem principal primeiro
     await channel.send(mensagem_aplicacao)
+    
+    # Enviar o GIF tutorial se ele existir
+    if os.path.exists(gif_tutorial):
+        try:
+            # Criar embed para o GIF
+            embed_gif = discord.Embed(
+                title="🎮 Tutorial: Como se aplicar na Guild",
+                description="Siga os passos mostrados no GIF abaixo para se aplicar em uma das nossas guilds",
+                color=0x00ff00
+            )
+            
+            # Anexar o GIF
+            file_gif = discord.File(gif_tutorial, filename=gif_tutorial)
+            embed_gif.set_image(url=f"attachment://{gif_tutorial}")
+            
+            await channel.send(embed=embed_gif, file=file_gif)
+            print(f"[TUTORIAL] GIF de aplicação enviado: {gif_tutorial}")
+            
+        except Exception as e:
+            print(f"[TUTORIAL] Erro ao enviar GIF: {e}")
+            await channel.send("*(GIF tutorial não disponível no momento)*")
+    else:
+        await channel.send("*(GIF tutorial não encontrado - verifique se o arquivo está na pasta raiz)*")
+    
     tickets_recrutamento[channel.id]["etapa"] = "aguardando_aplicacao"
 
 async def processar_aplicacao_feita(channel, user):
@@ -2387,7 +2472,6 @@ async def processar_aplicacao_feita(channel, user):
     
     await channel.send(
         f"✅ **Aplicação confirmada!**\n\n"
-        f"Agora vou notificar nossos recrutadores para que aprovem sua entrada na guild."
     )
     
     await asyncio.sleep(2)
@@ -2406,6 +2490,9 @@ async def notificar_recrutadores(channel, user):
     
     if recrutadores:
         mensagem_notificacao = (
+            f"**-------------------------------------------------------------------------**\n"
+            f"**RECRUTADOR**\n"
+            f"**-------------------------------------------------------------------------**\n\n"
             f"🔔 **NOVO CANDIDATO PRONTO PARA APROVAÇÃO!**\n\n"
             f"Ticket: {channel.mention}\n"
             f"Candidato: {user.mention}\n\n"
@@ -2442,9 +2529,67 @@ async def notificar_recrutadores(channel, user):
 async def processar_tutorial_final(channel, user):
     """Mostra o tutorial final para o novo membro"""
     
-    tutorial_final = (
+    # Nome da imagem na pasta raiz
+    img_tutorial = "tutorial_mostrar_canais.png"  # ou o nome que sua imagem tem
+    
+    # Primeira parte da mensagem
+    tutorial_inicial = (
         f"🎉 **PARABÉNS! VOCÊ FOI ACEITO NA GUILD!**\n\n"
-        f"Bem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
+        f"*Para que não tenha nenhum problema com os canais do discord, recomendamos que vá até as configurações do servidor*\n"
+        f"*e habilite* `mostrar todos os canais` como na imagem a seguir:\n"
+    )
+    
+    await channel.send(tutorial_inicial)
+    
+    # Enviar a imagem se ela existir
+    if os.path.exists(img_tutorial):
+        try:
+            file_tutorial = discord.File(img_tutorial, filename=img_tutorial)
+            embed_img = discord.Embed(
+                title="📋 Tutorial: Como mostrar todos os canais",
+                description="Siga os passos mostrados na imagem acima",
+                color=0x00ff00
+            )
+            embed_img.set_image(url=f"attachment://{img_tutorial}")
+            await channel.send(embed=embed_img, file=file_tutorial)
+        except Exception as e:
+            print(f"[TUTORIAL] Erro ao enviar imagem: {e}")
+            await channel.send("*(Imagem de tutorial não disponível)*")
+    else:
+        await channel.send("*(Imagem de tutorial não encontrada)*")
+    
+    # Segunda parte da mensagem
+    tutorial_final = (
+        f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
+        f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
+        f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
+        f"🔹 **Digite o comando:** `/registro`\n"
+        f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
+        f"📋 **Exemplo:**\n"
+        f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
+        f"✅ **Após o registro você terá acesso a:**\n"
+        f"• Canais exclusivos da guild\n"
+        f"• Sistema de pontuação\n"
+        f"• DGs beneficentes\n"
+        f"• Eventos e sorteios\n\n"
+        f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
+        f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
+    )
+    
+    await channel.send(tutorial_final)
+    
+    # Limpar dados do ticket
+    if channel.id in tickets_recrutamento:
+        del tickets_recrutamento[channel.id]
+    
+    print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
+
+
+async def processar_problema_com_registro(channel, user):
+
+
+    tutorial_final = (
+        f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
         f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
         f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
         f"🔹 **Digite o comando:** `/registro`\n"
@@ -2516,6 +2661,346 @@ class IndicadorSelectMenu(discord.ui.Select):
                 "❌ Erro ao encontrar o membro selecionado.",
                 ephemeral=True
             )
+
+# ;
+# ;
+# ;
+# ;
+# ;
+# ------------------------------------- REGISTRAR PONTOS COM APROVAÇÃO ---------------------------------
+# ;
+# ;
+# ;
+# ;
+# ;
+
+# Dicionário para armazenar pedidos de pontos pendentes
+pedidos_pontos_pendentes = {}
+
+@bot.tree.command(name="registrar_pontos", description="Solicita registro de pontos para aprovação de um zelador")
+@app_commands.describe(
+    integrantes="Nomes dos integrantes separados por espaço (@mention)",
+    pontos="Quantidade de pontos que cada integrante deve receber"
+)
+async def registrar_pontos(interaction: discord.Interaction, integrantes: str, pontos: int):
+    
+
+    if await permitir_comando_apenas_no_canal(interaction, "📊・solicitar-pontos"):
+        return
+
+    await safe_defer(interaction)
+
+    # Validar que todos os integrantes são mentions válidas
+    invalid_tokens = []
+    mention_pattern = re.compile(r"^<@!?(\d+)>$")
+    if integrantes:
+        for parte in integrantes.split():
+            if not mention_pattern.match(parte):
+                invalid_tokens.append(parte)
+
+    if invalid_tokens:
+        embed_erro = discord.Embed(
+            title="❌ Formato inválido - Integrantes",
+            description=(
+                "Os participantes devem ser informados como mentions do Discord.\n"
+                "Por favor, marque cada participante usando `@Nickname` (o bot recebe o formato interno `<@USERID>`).\n\n"
+                f"Tokens inválidos: {', '.join(invalid_tokens)}"
+            ),
+            color=0xff0000
+        )
+        embed_erro.add_field(name="💡 Como corrigir", value="Use o @ para mencionar cada jogador; ex: `@Klartz`.", inline=False)
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    # Validar pontos
+    if pontos <= 0:
+        embed_erro = discord.Embed(
+            title="❌ Valor Inválido",
+            description="A quantidade de pontos deve ser maior que zero.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    # Converter mentions para nomes
+    membros_limpos = []
+
+    membros_limpos.append(interaction.user.display_name)
+
+
+   # Depois adicionar os outros integrantes
+    for parte in integrantes.split():
+        nome_limpo = await tratar_mention(interaction, parte)
+        # Evitar duplicatas (caso a pessoa se mencione)
+        if nome_limpo not in membros_limpos:
+            membros_limpos.append(nome_limpo)
+
+    # Verificar se o usuário já tem um pedido pendente
+    user_id = interaction.user.id
+    if user_id in pedidos_pontos_pendentes:
+        embed_erro = discord.Embed(
+            title="❌ Pedido em Andamento",
+            description="Você já tem um pedido de pontos aguardando aprovação. Aguarde a resposta do zelador.",
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=embed_erro, ephemeral=True)
+        return
+
+    # Armazenar dados do pedido
+    pedidos_pontos_pendentes[user_id] = {
+        "solicitante": interaction.user.display_name,
+        "solicitante_mention": interaction.user.mention,
+        "membros": membros_limpos,
+        "pontos_cada": pontos,
+        "timestamp": datetime.datetime.now()
+    }
+
+    # Criar embed do pedido
+    embed_pedido = discord.Embed(
+        title="📋 SOLICITAÇÃO DE REGISTRO DE PONTOS",
+        description=f"**Solicitante:** {interaction.user.mention}\n**Aguardando aprovação de um Zelador**\n\n",
+        color=0xffa500
+    )
+
+    # Lista de integrantes
+    lista_membros = "\n".join([f"• **{membro}**" for membro in membros_limpos])
+    embed_pedido.add_field(
+        name="**---- Integrantes 👥 ---- **\n\n",
+        value=lista_membros,
+        inline=False
+    )
+
+    # Pontos por pessoa
+    embed_pedido.add_field(
+        name="**---- Pontuação 📊 ----**\n",
+        value=f"\n\n**{pontos}** pontos para cada integrante\n",
+        inline=False
+    )
+
+    embed_pedido.add_field(
+        name="⚠️ Importante",
+        value="Apenas membros com TAG de **Zelador** podem aprovar ou recusar este pedido.",
+        inline=False
+    )
+
+    embed_pedido.set_footer(text="Use os botões abaixo para aprovar ou recusar")
+
+    # Criar view com botões
+    view = AprovacaoPontosView(user_id)
+    
+    message = await interaction.followup.send(embed=embed_pedido, view=view)
+    
+    # Salvar referência da mensagem para poder editá-la depois
+    pedidos_pontos_pendentes[user_id]["message"] = message
+
+class AprovacaoPontosView(discord.ui.View):
+    def __init__(self, solicitante_id):
+        super().__init__(timeout=604800)  # 1 semana
+        self.solicitante_id = solicitante_id
+
+    @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.success)
+    async def aceitar_pedido(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.processar_decisao(interaction, True)
+
+    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.secondary)
+    async def recusar_pedido(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.processar_decisao(interaction, False)
+
+    async def processar_decisao(self, interaction: discord.Interaction, aprovado: bool):
+        # Verificar se tem permissão de zelador
+        if not any("zelador" in role.name.lower() for role in interaction.user.roles):
+            await interaction.response.send_message(
+                "❌ **Sem Permissão**\n\nApenas membros com TAG de **Zelador** podem aprovar ou recusar pedidos de pontos.",
+                ephemeral=True
+            )
+            return
+
+        # Verificar se o pedido ainda existe
+        if self.solicitante_id not in pedidos_pontos_pendentes:
+            await interaction.response.send_message(
+                "❌ Este pedido não foi encontrado ou já foi processado.",
+                ephemeral=True
+            )
+            return
+
+        # Buscar dados do pedido
+        pedido_data = pedidos_pontos_pendentes[self.solicitante_id]
+        
+        if aprovado:
+            await self.processar_aprovacao(interaction, pedido_data)
+        else:
+            await self.processar_recusa(interaction, pedido_data)
+
+        # Limpar dados do pedido
+        del pedidos_pontos_pendentes[self.solicitante_id]
+
+    async def processar_aprovacao(self, interaction: discord.Interaction, pedido_data):
+        """Processa a aprovação do pedido"""
+        
+        # Adicionar pontos para cada membro
+        resultados = []
+        for membro in pedido_data["membros"]:
+            nova_pontuacao = adicionar_pontos(membro, pedido_data["pontos_cada"])
+            if nova_pontuacao is not None:
+                resultados.append(f"• **{membro}** → +{pedido_data['pontos_cada']} pts (Total: {nova_pontuacao})")
+            else:
+                resultados.append(f"• **{membro}** → ❌ Erro ao adicionar pontos")
+
+        # Criar embed de aprovação
+        embed_aprovado = discord.Embed(
+            title="✅ PEDIDO APROVADO",
+            description=f"**Aprovado por:** {interaction.user.mention}\n**Solicitante:** {pedido_data['solicitante_mention']}",
+            color=0x00ff00
+        )
+
+        embed_aprovado.add_field(
+            name="📊 Pontos Registrados",
+            value="\n".join(resultados),
+            inline=False
+        )
+
+        embed_aprovado.add_field(
+            name="📋 Resumo",
+            value=f"**Pontos por pessoa:** {pedido_data['pontos_cada']}\n**Total de integrantes:** {len(pedido_data['membros'])}\n**Total de pontos distribuídos:** {pedido_data['pontos_cada'] * len(pedido_data['membros'])}",
+            inline=False
+        )
+
+        embed_aprovado.set_footer(text="Pontos registrados no sistema com sucesso! 🎉")
+
+        # Desabilitar botões
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(embed=embed_aprovado, view=self)
+
+        # Enviar notificação para o solicitante
+        try:
+            solicitante = interaction.guild.get_member(self.solicitante_id)
+            if solicitante:
+                embed_notificacao = discord.Embed(
+                    title="✅ Seu pedido foi APROVADO!",
+                    description=f"Seus pontos foram registrados no sistema por {interaction.user.mention}",
+                    color=0x00ff00
+                )
+                embed_notificacao.add_field(
+                    name="📊 Detalhes",
+                    value=f"**{pedido_data['pontos_cada']}** pontos para cada um dos **{len(pedido_data['membros'])}** integrantes",
+                    inline=False
+                )
+                await solicitante.send(embed=embed_notificacao)
+        except:
+            pass  # Falha silenciosa se não conseguir enviar DM
+
+    async def processar_recusa(self, interaction: discord.Interaction, pedido_data):
+        """Processa a recusa do pedido"""
+        
+        # Criar embed de recusa
+        embed_recusado = discord.Embed(
+            title="❌ PEDIDO RECUSADO",
+            description=f"**Recusado por:** {interaction.user.mention}\n**Solicitante:** {pedido_data['solicitante_mention']}",
+            color=0xff0000
+        )
+
+        embed_recusado.add_field(
+            name="📋 Pedido Original",
+            value=f"**Integrantes:** {', '.join(pedido_data['membros'])}\n**Pontos cada:** {pedido_data['pontos_cada']}",
+            inline=False
+        )
+
+        embed_recusado.add_field(
+            name="💡 Orientações para o Solicitante",
+            value=(
+                "• Revise as regras de pontuação da guild\n"
+                "• Verifique se a atividade realizada realmente merece pontos\n"
+                "• Certifique-se de que todos os participantes são membros ativos\n"
+                "• Quando estiver tudo correto, faça um novo pedido"
+            ),
+            inline=False
+        )
+
+        embed_recusado.set_footer(text="Pedido rejeitado. Revise as informações e tente novamente.")
+
+        # Desabilitar botões
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(embed=embed_recusado, view=self)
+
+        # Enviar notificação para o solicitante
+        try:
+            solicitante = interaction.guild.get_member(self.solicitante_id)
+            if solicitante:
+                embed_notificacao = discord.Embed(
+                    title="❌ Seu pedido foi RECUSADO",
+                    description=f"Seu pedido de pontos foi recusado por {interaction.user.mention}",
+                    color=0xff0000
+                )
+                embed_notificacao.add_field(
+                    name="🔄 Próximos Passos",
+                    value=(
+                        "1. **Revise as regras** de pontuação da guild\n"
+                        "2. **Verifique** se a atividade merece pontuação\n"
+                        "3. **Certifique-se** de que todos os dados estão corretos\n"
+                        "4. **Faça um novo pedido** quando estiver tudo certo\n\n"
+                        "Use `/registrar_pontos` novamente quando necessário."
+                    ),
+                    inline=False
+                )
+                await solicitante.send(embed=embed_notificacao)
+        except:
+            pass  # Falha silenciosa se não conseguir enviar DM
+
+    async def on_timeout(self):
+        """Processa quando o tempo limite expira"""
+        
+        if self.solicitante_id in pedidos_pontos_pendentes:
+            pedido_data = pedidos_pontos_pendentes[self.solicitante_id]
+            
+            # Criar embed de timeout
+            embed_timeout = discord.Embed(
+                title="⏰ PEDIDO EXPIRADO",
+                description=f"**Solicitante:** {pedido_data['solicitante_mention']}\n\nO pedido expirou por falta de resposta dos zeladores.",
+                color=0x888888
+            )
+            
+            embed_timeout.add_field(
+                name="🔄 Como proceder",
+                value="Faça um novo pedido usando `/registrar_pontos` se ainda precisar registrar esses pontos.",
+                inline=False
+            )
+
+            # Desabilitar botões
+            for item in self.children:
+                item.disabled = True
+
+            # Tentar editar a mensagem
+            try:
+                message = pedido_data.get("message")
+                if message:
+                    await message.edit(embed=embed_timeout, view=self)
+            except:
+                pass
+
+            # Limpar dados do pedido
+            del pedidos_pontos_pendentes[self.solicitante_id]
+
+
+@bot.tree.command(name="limpar_pedidos_antigos", description="Remove pedidos de pontos com mais de 7 dias")
+async def limpar_pedidos_antigos(interaction: discord.Interaction):
+    if not any("zelador" in role.name.lower() for role in interaction.user.roles):
+        await interaction.response.send_message("❌ Apenas zeladores podem usar este comando.", ephemeral=True)
+        return
+    
+    agora = datetime.datetime.now()
+    pedidos_removidos = 0
+    
+    for user_id, dados in list(pedidos_pontos_pendentes.items()):
+        timestamp = dados.get("timestamp")
+        if timestamp and (agora - timestamp).days > 7:  # Mais de 7 dias
+            del pedidos_pontos_pendentes[user_id]
+            pedidos_removidos += 1
+    
+    await interaction.response.send_message(f"✅ {pedidos_removidos} pedidos antigos foram removidos.", ephemeral=True)
 
 
 # ;
@@ -3297,6 +3782,43 @@ async def safe_defer(interaction: discord.Interaction, ephemeral: bool = False) 
             print(f"[safe_defer] Erro inesperado ao tentar deferir: {e}")
         return False
 
+async def bloquear_comando_no_canal(interaction: discord.Interaction, nome_canal_bloqueado: str) -> bool:
+    # Verificar se está sendo usado no canal proibido
+    if interaction.channel.name == nome_canal_bloqueado:
+        embed_erro = discord.Embed(
+            title="❌ Canal Bloqueado",
+            description=f"Este comando não pode ser usado no canal **{nome_canal_bloqueado}**.\n\nPor favor, use este comando em outro canal do servidor.",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        return True  # Canal bloqueado
+    
+    return False  # Canal liberado
+
+async def permitir_comando_apenas_no_canal(interaction: discord.Interaction, nome_canal_permitido: str) -> bool:
+    """
+    Permite o comando apenas no canal especificado, bloqueia em todos os outros
+    
+    Args:
+        interaction: A interação do Discord
+        nome_canal_permitido: Nome do canal onde o comando PODE ser usado
+    
+    Returns:
+        True se o canal está bloqueado (comando não deve continuar)
+        False se o canal está liberado (comando pode continuar)
+    """
+    # Verificar se NÃO está sendo usado no canal permitido
+    if interaction.channel.name != nome_canal_permitido:
+        embed_erro = discord.Embed(
+            title="❌ Canal Restrito",
+            description=f"Este comando só pode ser usado no canal **{nome_canal_permitido}**.\n\nPor favor, vá até o canal correto para usar este comando.",
+            color=0xff0000
+        )
+        await interaction.response.send_message(embed=embed_erro, ephemeral=True)
+        return True  # Canal bloqueado (não é o permitido)
+    
+    return False  # Canal liberado (é o permitido)
+
 
 async def atualizar_ranking():
      for guild in bot.guilds:
@@ -3336,6 +3858,7 @@ async def atualizar_ranking():
                                 await member.remove_roles(role, reason="Ranking de pontuação")
                             except Exception as e:
                                 print(f"[TAG] Erro ao remover role {tag} de {member.display_name}: {e}")
+
 
 if not token:
     raise RuntimeError("Token do Discord não encontrado. Coloque seu token em TOKEN.TXT.")
