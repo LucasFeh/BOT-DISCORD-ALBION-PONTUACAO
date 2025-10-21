@@ -2180,7 +2180,10 @@ async def processar_etapa_recrutamento(message):
     etapa_atual = ticket_data["etapa"]
     
     print(f"[RECRUTAMENTO] Canal: {channel.name}, Etapa: {etapa_atual}, Mensagem: {content}")
-    
+
+    aplicou = ticket_data.get("aplicou", False)
+
+
     try:
         if etapa_atual == "boas_vindas":
             if content in ["SIM", "S"]:
@@ -2208,14 +2211,34 @@ async def processar_etapa_recrutamento(message):
                     f"📸 **Ainda aguardando seu print dos status!**\n\n"
                     f"Envie a imagem primeiro e depois escreva **PRONTO** para continuar."
                 )
-        
         elif etapa_atual == "aguardando_aplicacao":
-            if content == "PRONTO":
+            if content == "PRONTO" and aplicou == True:
                 await processar_aplicacao_feita(channel, user)
+            elif content == "LOUCOS POR PVE":
+                tickets_recrutamento[channel.id]["aplicou"] = True
+                await channel.send(
+                    f"✅ **Perfeito!**\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**LOUCOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+                )
+            elif content == "INSANOS POR PVE":
+                tickets_recrutamento[channel.id]["aplicou"] = True
+                await channel.send(
+                    f"✅ **Perfeito!**\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**ISANOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+                )
+            elif content == "FANATICOS POR PVE":
+                tickets_recrutamento[channel.id]["aplicou"] = True
+                await channel.send(
+                    f"✅ **Perfeito!**\n\n"
+                    f"Vejo que você já se aplicou para nossa guild \"**FANATICOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n\n"
+                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+                )
             else:
                 await channel.send(
-                    f"⏳ **Ainda aguardando você se aplicar!**\n\n"
-                    f"Primeiro se aplique em uma das guilds e depois escreva **PRONTO** para continuar."
+                    f"⏳ **Vi que você ainda não especificou em qual guild se aplicou!**\n\n"
+                    f"Primeiro se aplique nas guildas e depois escreva **PRONTO** para continuar."
                 )
         
         elif etapa_atual == "aguardando_recrutador":
@@ -2297,7 +2320,7 @@ async def pedir_print_status(channel, user):
     
     # Aqui você pode colocar uma imagem de exemplo se tiver
     exemplo_texto = "*(envie uma imagem similar ao exemplo abaixo)*"  # Substituir por imagem real se tiver
-    img = "tutorial_tipos.png"
+    img = "tutorial_status.png"
     
     mensagem_print = (
         f"📸 **ETAPA 2: PRINT DOS SEUS STATUS**\n\n"
@@ -2341,15 +2364,17 @@ async def pedir_aplicacao_guild(channel, user):
     
     mensagem_aplicacao = (
         f"🏰 **ETAPA 3: APLICAÇÃO NA GUILD**\n\n"
-        f"Agora você deve se aplicar em uma das nossas 3 guilds:\n\n"
-        f"🔹 **LOUCOS POR PVE** - Guild principal\n"
-        f"🔹 **INSANOS POR PVE** - Guild secundária\n"
-        f"🔹 **FANÁTICOS POR PVE** - Guild terciária\n\n"
+        f"`Não temos guild principal todas tem o mesmo nivel de relevância`\n\n"
+        f"Agora você deve se aplicar nas nossas 3 guildas:\n\n"
+        f"🔹 **LOUCOS POR PVE** \n"
+        f"🔹 **INSANOS POR PVE** \n"
+        f"🔹 **FANATICOS POR PVE**\n\n"
         f"📋 **Como fazer:**\n"
         f"• Abra o Albion Online\n"
         f"• Vá no menu de Guilds\n"
         f"• Procure por uma das guilds acima\n"
         f"• Clique em 'Aplicar' ou 'Join'\n\n"
+        f"*Aplique nas 3 para que sua aprovação seja mais rápida*\n\n"
         f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu e depois** `PRONTO`\n\n"
         f"**Exemplo:** `LOUCOS POR PVE` e depois `PRONTO`"
     )
