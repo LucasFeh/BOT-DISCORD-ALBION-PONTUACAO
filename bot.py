@@ -37,12 +37,8 @@ GUILD_ID = "QDufxXRfSiydcD58_Lo9KA"
 # Dicionário de pontuação por conteúdo
 PONTOS_POR_CONTEUDO = {
     "DG BENEFICIENTE": 20,
-    "MONTARIA - (600k)": 30,
-    "RE-GEAR (4M)": 40,
-    "ARMA 4.4": 60,
-    "MONTARIA (1.5M)": 70,
-    "MONTARIA (4M)": 90,
-    "PRATA (5M)": 100,
+    "ARMA 4.4": 40,
+    "PRATA (4M)": 70,
     "ARMA 8.3": 300,
     "ARMA 8.4": 5500,
     # você pode adicionar mais tipos depois
@@ -63,7 +59,7 @@ icones = {
     "ARMA 8.4": "🗡️",
     "MONTARIA (1.5M)": "🐎",
     "MONTARIA (4M)": "🐎",
-    "PRATA (5M)": "💰",
+    "PRATA (4M)": "💰",
     "ARMA 8.3": "🗡️",
     "MAMUTE": "🐘",
     "SORTEIO": "🎲",
@@ -123,8 +119,8 @@ async def on_ready():
 # Observa mensagens no canal ・dg-beneficente e adiciona ganhadores ao sorteios.json
 @bot.event
 async def on_message(message):
-    # Ignorar mensagens do próprio bot
-    if message.author.bot:
+    # Ignorar mensagens do próprio bot (mas permitir mensagens de outros bots)
+    if message.author.id == bot.user.id:
         return
 
     print(f"[DEBUG] Mensagem recebida no canal: {message.channel.name}")
@@ -1072,8 +1068,8 @@ async def addpontos(interaction: discord.Interaction, integrantes: str, pontos: 
 @app_commands.describe(membro="Nome do membro para consultar")
 async def pontos(interaction: discord.Interaction, membro: str):
 
-    if await bloquear_comando_no_canal(interaction, "📊・adicionar-pontos-beneficente"):
-        return  # Se retornar True, o canal está bloqueado e o comando deve parar
+    if await permitir_comando_apenas_no_canal(interaction, "📋・consultar-pontuação"):
+        return  # Se retornar True, não está no canal permitido e o comando deve parar
 
     await safe_defer(interaction)
 
@@ -2177,441 +2173,441 @@ tickets_recrutamento = {}
 # ;
 # ;
 
-@bot.event
-async def on_guild_channel_create(channel):
-    """Monitora a criação de canais e inicia processo de recrutamento para tickets"""
+# @bot.event
+# async def on_guild_channel_create(channel):
+#     """Monitora a criação de canais e inicia processo de recrutamento para tickets"""
     
-    # Verificar se é um canal de texto
-    if not isinstance(channel, discord.TextChannel):
-        return
+#     # Verificar se é um canal de texto
+#     if not isinstance(channel, discord.TextChannel):
+#         return
     
-    # Verificar se o nome do canal começa com "ticket-"
-    if not channel.name.lower().startswith("ticket-"):
-        return
+#     # Verificar se o nome do canal começa com "ticket-"
+#     if not channel.name.lower().startswith("ticket-"):
+#         return
     
-    print(f"[TICKET] Novo ticket criado: {channel.name} (ID: {channel.id})")
+#     print(f"[TICKET] Novo ticket criado: {channel.name} (ID: {channel.id})")
     
-    try:
-        # Aguardar um pouco para garantir que o canal está totalmente criado
-        await asyncio.sleep(2)
+#     try:
+#         # Aguardar um pouco para garantir que o canal está totalmente criado
+#         await asyncio.sleep(2)
         
-        # Inicializar estado do ticket
-        tickets_recrutamento[channel.id] = {
-            "etapa": "boas_vindas",
-            "dados": {}
-        }
+#         # Inicializar estado do ticket
+#         tickets_recrutamento[channel.id] = {
+#             "etapa": "boas_vindas",
+#             "dados": {}
+#         }
         
-        # Enviar mensagem de boas-vindas personalizada
-        mensagem_boas_vindas = (
-            f"🏰 **BEM-VINDO AO PROCESSO DE RECRUTAMENTO - LOUCOS POR PVE!**\n\n"
-            f"Olá! Seja muito bem-vindo(a) ao nosso servidor, você está no ticket: {channel.mention}!\n\n"
-            f"📋 **INFORMAÇÕES IMPORTANTES:**\n"
-            f"• Nossa guild **NÃO aceita menores de 18 anos**\n"
-            f"• Para players com **menos de 30M de fama total**, é necessário ter **indicação de um membro**\n\n"
-            f"❓ **PRIMEIRA PERGUNTA:**\n"
-            f"Você foi **indicado** por algum membro da nossa guild?\n\n"
-            f"🔹 Responda **SIM** se foi indicado por alguém\n"
-            f"🔹 Responda **NÃO** se não foi indicado por ninguém"
-        )
+#         # Enviar mensagem de boas-vindas personalizada
+#         mensagem_boas_vindas = (
+#             f"🏰 **BEM-VINDO AO PROCESSO DE RECRUTAMENTO - LOUCOS POR PVE!**\n\n"
+#             f"Olá! Seja muito bem-vindo(a) ao nosso servidor, você está no ticket: {channel.mention}!\n\n"
+#             f"📋 **INFORMAÇÕES IMPORTANTES:**\n"
+#             f"• Nossa guild **NÃO aceita menores de 18 anos**\n"
+#             f"• Para players com **menos de 30M de fama total**, é necessário ter **indicação de um membro**\n\n"
+#             f"❓ **PRIMEIRA PERGUNTA:**\n"
+#             f"Você foi **indicado** por algum membro da nossa guild?\n\n"
+#             f"🔹 Responda **SIM** se foi indicado por alguém\n"
+#             f"🔹 Responda **NÃO** se não foi indicado por ninguém"
+#         )
         
-        await channel.send(mensagem_boas_vindas)
+#         await channel.send(mensagem_boas_vindas)
         
-        print(f"[TICKET] Processo de recrutamento iniciado para {channel.name}")
+#         print(f"[TICKET] Processo de recrutamento iniciado para {channel.name}")
         
-    except discord.Forbidden:
-        print(f"[TICKET] Sem permissão para enviar mensagem no canal {channel.name}")
-    except Exception as e:
-        print(f"[TICKET] Erro ao iniciar recrutamento: {e}")
+#     except discord.Forbidden:
+#         print(f"[TICKET] Sem permissão para enviar mensagem no canal {channel.name}")
+#     except Exception as e:
+#         print(f"[TICKET] Erro ao iniciar recrutamento: {e}")
 
-@bot.event
-async def on_message(message):
-    # Ignorar mensagens do próprio bot
-    if message.author.bot:
-        return
+# @bot.event
+# async def on_message(message):
+#     # Ignorar mensagens do próprio bot
+#     if message.author.bot:
+#         return
 
-    # Verificar se é em um canal de ticket
-    if (isinstance(message.channel, discord.TextChannel) and 
-        message.channel.name.lower().startswith("ticket-") and
-        message.channel.id in tickets_recrutamento):
+#     # Verificar se é em um canal de ticket
+#     if (isinstance(message.channel, discord.TextChannel) and 
+#         message.channel.name.lower().startswith("ticket-") and
+#         message.channel.id in tickets_recrutamento):
         
-        await processar_etapa_recrutamento(message)
+#         await processar_etapa_recrutamento(message)
     
-    # Código existente para outros canais
-    if message.channel.name == "🎁・dg-beneficente":
-        # ... código existente ...
-        pass
+#     # Código existente para outros canais
+#     if message.channel.name == "🎁・dg-beneficente":
+#         # ... código existente ...
+#         pass
     
-    await bot.process_commands(message)
+#     await bot.process_commands(message)
 
-async def processar_etapa_recrutamento(message):
-    """Processa cada etapa do recrutamento"""
-    channel = message.channel
-    user = message.author
-    content = message.content.strip().upper()
+# async def processar_etapa_recrutamento(message):
+#     """Processa cada etapa do recrutamento"""
+#     channel = message.channel
+#     user = message.author
+#     content = message.content.strip().upper()
     
-    ticket_data = tickets_recrutamento[channel.id]
-    etapa_atual = ticket_data["etapa"]
+#     ticket_data = tickets_recrutamento[channel.id]
+#     etapa_atual = ticket_data["etapa"]
     
-    print(f"[RECRUTAMENTO] Canal: {channel.name}, Etapa: {etapa_atual}, Mensagem: {content}")
+#     print(f"[RECRUTAMENTO] Canal: {channel.name}, Etapa: {etapa_atual}, Mensagem: {content}")
 
-    aplicou = ticket_data.get("aplicou", False)
+#     aplicou = ticket_data.get("aplicou", False)
 
 
-    try:
-        if etapa_atual == "boas_vindas":
-            if content in ["SIM", "S"]:
-                # Usuário foi indicado - mostrar select com membros
-                await processar_indicacao_sim(channel, user)
-            elif content in ["NÃO", "NAO", "N"]:
-                # Usuário não foi indicado - continuar para próxima etapa
-                await processar_indicacao_nao(channel, user)
-            else:
-                await channel.send(
-                    f"❌ **Por favor, responda apenas:**\n"
-                    f"• **SIM** - se foi indicado por alguém\n"
-                    f"• **NÃO** - se não foi indicado por ninguém"
-                )
+#     try:
+#         if etapa_atual == "boas_vindas":
+#             if content in ["SIM", "S"]:
+#                 # Usuário foi indicado - mostrar select com membros
+#                 await processar_indicacao_sim(channel, user)
+#             elif content in ["NÃO", "NAO", "N"]:
+#                 # Usuário não foi indicado - continuar para próxima etapa
+#                 await processar_indicacao_nao(channel, user)
+#             else:
+#                 await channel.send(
+#                     f"❌ **Por favor, responda apenas:**\n"
+#                     f"• **SIM** - se foi indicado por alguém\n"
+#                     f"• **NÃO** - se não foi indicado por ninguém"
+#                 )
         
-        elif etapa_atual == "aguardando_indicador":
-            if content == "PRONTO":
-                await processar_indicacao_nao(channel, user)
+#         elif etapa_atual == "aguardando_indicador":
+#             if content == "PRONTO":
+#                 await processar_indicacao_nao(channel, user)
         
-        elif etapa_atual == "aguardando_print":
-                # Verificar se a mensagem tem anexos de imagem
-                if message.attachments:
-                    # Verificar se pelo menos um anexo é uma imagem
-                    imagens_encontradas = []
-                    for attachment in message.attachments:
-                        if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
-                            imagens_encontradas.append(attachment.filename)
+#         elif etapa_atual == "aguardando_print":
+#                 # Verificar se a mensagem tem anexos de imagem
+#                 if message.attachments:
+#                     # Verificar se pelo menos um anexo é uma imagem
+#                     imagens_encontradas = []
+#                     for attachment in message.attachments:
+#                         if any(attachment.filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp']):
+#                             imagens_encontradas.append(attachment.filename)
                     
-                    if imagens_encontradas:
-                        # Marcar que a imagem foi enviada
-                        tickets_recrutamento[channel.id]["dados"]["print_enviado"] = True
+#                     if imagens_encontradas:
+#                         # Marcar que a imagem foi enviada
+#                         tickets_recrutamento[channel.id]["dados"]["print_enviado"] = True
                         
-                        await channel.send(
-                            f"✅ **Imagem recebida!**\n\n"
-                            f"Print dos status detectado: `{', '.join(imagens_encontradas)}`\n\n"
-                            f"Agora escreva **PRONTO** para continuar para a próxima etapa."
-                        )
-                    else:
-                        await channel.send(
-                            f"❌ **Arquivo não é uma imagem válida!**\n\n"
-                            f"Por favor, envie uma imagem dos seus status (PNG, JPG, GIF, etc.) e depois escreva **PRONTO**."
-                        )
+#                         await channel.send(
+#                             f"✅ **Imagem recebida!**\n\n"
+#                             f"Print dos status detectado: `{', '.join(imagens_encontradas)}`\n\n"
+#                             f"Agora escreva **PRONTO** para continuar para a próxima etapa."
+#                         )
+#                     else:
+#                         await channel.send(
+#                             f"❌ **Arquivo não é uma imagem válida!**\n\n"
+#                             f"Por favor, envie uma imagem dos seus status (PNG, JPG, GIF, etc.) e depois escreva **PRONTO**."
+#                         )
                 
-                elif content == "PRONTO":
-                    # Verificar se já foi enviada uma imagem
-                    print_enviado = ticket_data.get("dados", {}).get("print_enviado", False)
+#                 elif content == "PRONTO":
+#                     # Verificar se já foi enviada uma imagem
+#                     print_enviado = ticket_data.get("dados", {}).get("print_enviado", False)
                     
-                    if print_enviado:
-                        await processar_print_enviado(channel, user)
-                    else:
-                        await channel.send(
-                            f"⚠️ **Ops! Você ainda não enviou o print dos seus status!**\n\n"
-                            f"📸 Por favor, primeiro envie uma **imagem/screenshot** dos seus status do Albion Online.\n"
-                            f"Depois disso, escreva **PRONTO** para continuar.\n\n"
-                            f"💡 **Lembre-se:** A imagem deve mostrar suas estatísticas/atributos do personagem no jogo."
-                        )
-                else:
-                    await channel.send(
-                        f"📸 **Ainda aguardando seu print dos status!**\n\n"
-                        f"• Primeiro: Envie uma **imagem** dos seus status do Albion Online\n"
-                        f"• Depois: Escreva **PRONTO** para continuar\n\n"
-                        f"💡 **Formatos aceitos:** PNG, JPG, JPEG, GIF, WEBP"
-                    )
+#                     if print_enviado:
+#                         await processar_print_enviado(channel, user)
+#                     else:
+#                         await channel.send(
+#                             f"⚠️ **Ops! Você ainda não enviou o print dos seus status!**\n\n"
+#                             f"📸 Por favor, primeiro envie uma **imagem/screenshot** dos seus status do Albion Online.\n"
+#                             f"Depois disso, escreva **PRONTO** para continuar.\n\n"
+#                             f"💡 **Lembre-se:** A imagem deve mostrar suas estatísticas/atributos do personagem no jogo."
+#                         )
+#                 else:
+#                     await channel.send(
+#                         f"📸 **Ainda aguardando seu print dos status!**\n\n"
+#                         f"• Primeiro: Envie uma **imagem** dos seus status do Albion Online\n"
+#                         f"• Depois: Escreva **PRONTO** para continuar\n\n"
+#                         f"💡 **Formatos aceitos:** PNG, JPG, JPEG, GIF, WEBP"
+#                     )
 
-        elif etapa_atual == "aguardando_aplicacao":
-            if content == "PRONTO" and aplicou == True:
-                await processar_aplicacao_feita(channel, user)
-            elif content == "LOUCOS POR PVE":
-                tickets_recrutamento[channel.id]["aplicou"] = True
-                await channel.send(
-                    f"Vejo que você já se aplicou para nossa guild \"**LOUCOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
-                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
-                )
-            elif content == "INSANOS POR PVE":
-                tickets_recrutamento[channel.id]["aplicou"] = True
-                await channel.send(
-                    f"Vejo que você já se aplicou para nossa guild \"**ISANOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
-                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
-                )
-            elif content == "FANATICOS POR PVE":
-                tickets_recrutamento[channel.id]["aplicou"] = True
-                await channel.send(
-                    f"Vejo que você já se aplicou para nossa guild \"**FANATICOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
-                    f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
-                )
+#         elif etapa_atual == "aguardando_aplicacao":
+#             if content == "PRONTO" and aplicou == True:
+#                 await processar_aplicacao_feita(channel, user)
+#             elif content == "LOUCOS POR PVE":
+#                 tickets_recrutamento[channel.id]["aplicou"] = True
+#                 await channel.send(
+#                     f"Vejo que você já se aplicou para nossa guild \"**LOUCOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
+#                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+#                 )
+#             elif content == "INSANOS POR PVE":
+#                 tickets_recrutamento[channel.id]["aplicou"] = True
+#                 await channel.send(
+#                     f"Vejo que você já se aplicou para nossa guild \"**ISANOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
+#                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+#                 )
+#             elif content == "FANATICOS POR PVE":
+#                 tickets_recrutamento[channel.id]["aplicou"] = True
+#                 await channel.send(
+#                     f"Vejo que você já se aplicou para nossa guild \"**FANATICOS POR PVE**\", agora só falta um recrutador aceitar sua aplicação.\n"
+#                     f"Caso esteja tudo certo, escreva **PRONTO** para continuar."
+#                 )
         
-        elif etapa_atual == "aguardando_recrutador":
-            if content == "PRONTO":
-                # Verificar se quem escreveu "PRONTO" é um recrutador
-                member = user
-                if any("recrutador" in role.name.lower() for role in member.roles):
-                    await processar_tutorial_final(channel, user)
-                else:
-                    await channel.send(
-                        f"😄 **kkkkk boa tentativa!**\n\n"
-                        f"Mas quem precisa te aceitar é um **recrutador**, por favor aguarde enquanto um recrutador aceita sua aplicação :D\n\n"
-                        f"🔍 **Status:** Aguardando aprovação de um membro com TAG de **Recrutador**"
-                    )
+#         elif etapa_atual == "aguardando_recrutador":
+#             if content == "PRONTO":
+#                 # Verificar se quem escreveu "PRONTO" é um recrutador
+#                 member = user
+#                 if any("recrutador" in role.name.lower() for role in member.roles):
+#                     await processar_tutorial_final(channel, user)
+#                 else:
+#                     await channel.send(
+#                         f"😄 **kkkkk boa tentativa!**\n\n"
+#                         f"Mas quem precisa te aceitar é um **recrutador**, por favor aguarde enquanto um recrutador aceita sua aplicação :D\n\n"
+#                         f"🔍 **Status:** Aguardando aprovação de um membro com TAG de **Recrutador**"
+#                     )
     
-    except Exception as e:
-        print(f"[RECRUTAMENTO] Erro ao processar etapa: {e}")
+#     except Exception as e:
+#         print(f"[RECRUTAMENTO] Erro ao processar etapa: {e}")
 
-async def processar_indicacao_sim(channel, user):
+# async def processar_indicacao_sim(channel, user):
 
-    await channel.send(
-        f"👥 **ÓTIMO! Você foi indicado por alguém.**\n"
-        f"*Por favor, digite quem foi que te indicou *\n"
-        f"`Lembre-se, com menos de 30M de fama, você só vai conseguir aprovação caso tenha sido indicado por alguém`\n\n"
-        f"**Caso esteja tudo pronto digite `PRONTO`**"
-    )
-    tickets_recrutamento[channel.id]["etapa"] = "aguardando_indicador"
+#     await channel.send(
+#         f"👥 **ÓTIMO! Você foi indicado por alguém.**\n"
+#         f"*Por favor, digite quem foi que te indicou *\n"
+#         f"`Lembre-se, com menos de 30M de fama, você só vai conseguir aprovação caso tenha sido indicado por alguém`\n\n"
+#         f"**Caso esteja tudo pronto digite `PRONTO`**"
+#     )
+#     tickets_recrutamento[channel.id]["etapa"] = "aguardando_indicador"
 
-async def processar_indicacao_nao(channel, user):
-    """Usuário disse que não foi indicado - pedir print dos status"""
-    await pedir_print_status(channel, user)
+# async def processar_indicacao_nao(channel, user):
+#     """Usuário disse que não foi indicado - pedir print dos status"""
+#     await pedir_print_status(channel, user)
 
-async def pedir_print_status(channel, user):
-    """Pede para o usuário enviar print dos status do jogo"""
+# async def pedir_print_status(channel, user):
+#     """Pede para o usuário enviar print dos status do jogo"""
     
-    # Aqui você pode colocar uma imagem de exemplo se tiver
-    exemplo_texto = "*(envie uma imagem similar ao exemplo abaixo)*"  # Substituir por imagem real se tiver
-    img = "tutorial_status.png"
+#     # Aqui você pode colocar uma imagem de exemplo se tiver
+#     exemplo_texto = "*(envie uma imagem similar ao exemplo abaixo)*"  # Substituir por imagem real se tiver
+#     img = "tutorial_status.png"
     
-    mensagem_print = (
-        f"📸 **ETAPA 2: PRINT DOS SEUS STATUS**\n\n"
-        f"Agora preciso que você envie um **print/screenshot** dos seus status dentro do Albion Online.\n\n"
-        f"📋 **Como fazer:**\n"
-        f"• Abra o Albion Online\n"
-        f"• Vá na tela de atributos/estatísticas do seu personagem\n"
-        f"• Tire um print/screenshot\n"
-        f"• Envie a imagem aqui no chat\n\n"
-        f"⚠️ **Após enviar a imagem, escreva** `PRONTO` **para continuar!**"
-    )
+#     mensagem_print = (
+#         f"📸 **ETAPA 2: PRINT DOS SEUS STATUS**\n\n"
+#         f"Agora preciso que você envie um **print/screenshot** dos seus status dentro do Albion Online.\n\n"
+#         f"📋 **Como fazer:**\n"
+#         f"• Abra o Albion Online\n"
+#         f"• Vá na tela de atributos/estatísticas do seu personagem\n"
+#         f"• Tire um print/screenshot\n"
+#         f"• Envie a imagem aqui no chat\n\n"
+#         f"⚠️ **Após enviar a imagem, escreva** `PRONTO` **para continuar!**"
+#     )
     
-    # Enviar mensagem de exemplo se a imagem existir
-    if os.path.exists(img):
-        file1 = discord.File(img, filename=img)
-        embed1 = discord.Embed(
-            title="📸 Exemplo de Print dos Status",
-            description=exemplo_texto,
-            color=0x00ff00
-        )
-        embed1.set_image(url=f"attachment://{img}")
+#     # Enviar mensagem de exemplo se a imagem existir
+#     if os.path.exists(img):
+#         file1 = discord.File(img, filename=img)
+#         embed1 = discord.Embed(
+#             title="📸 Exemplo de Print dos Status",
+#             description=exemplo_texto,
+#             color=0x00ff00
+#         )
+#         embed1.set_image(url=f"attachment://{img}")
     
-    # Enviar a mensagem principal
-    await channel.send(mensagem_print)
-    await channel.send(embed=embed1, file=file1)
-    tickets_recrutamento[channel.id]["etapa"] = "aguardando_print"
+#     # Enviar a mensagem principal
+#     await channel.send(mensagem_print)
+#     await channel.send(embed=embed1, file=file1)
+#     tickets_recrutamento[channel.id]["etapa"] = "aguardando_print"
 
-async def processar_print_enviado(channel, user):
-    """Processa quando o print foi enviado"""
+# async def processar_print_enviado(channel, user):
+#     """Processa quando o print foi enviado"""
     
-    await channel.send(
-        f"✅ **Confirmação recebida!**\n\n"
-        f"Vamos para a próxima etapa!"
-    )
+#     await channel.send(
+#         f"✅ **Confirmação recebida!**\n\n"
+#         f"Vamos para a próxima etapa!"
+#     )
     
-    await asyncio.sleep(2)
-    await pedir_aplicacao_guild(channel, user)
+#     await asyncio.sleep(2)
+#     await pedir_aplicacao_guild(channel, user)
 
-async def pedir_aplicacao_guild(channel, user):
-    """Pede para o usuário se aplicar em uma das guilds"""
-    gif_tutorial = "tutorial_aplicacao_guild.gif"
+# async def pedir_aplicacao_guild(channel, user):
+#     """Pede para o usuário se aplicar em uma das guilds"""
+#     gif_tutorial = "tutorial_aplicacao_guild.gif"
     
-    mensagem_aplicacao = (
-        f"🏰 **ETAPA 3: APLICAÇÃO NA GUILD**\n\n"
-        f"`Não temos guild principal todas tem o mesmo nivel de relevância`\n\n"
-        f"Agora você deve se aplicar nas nossas 3 guildas:\n\n"
-        f"🔹 **LOUCOS POR PVE** `Cheio` \n"
-        f"🔹 **INSANOS POR PVE** `Cheio` \n"
-        f"🔹 **FANATICOS POR PVE** `Nova vazio - chance maior` \n\n"
-        f"📋 **Como fazer:**\n"
-        f"• Abra o Albion Online\n"
-        f"• Vá no menu de Guilds\n"
-        f"• Procure por uma das guilds acima\n"
-        f"• Clique em 'Aplicar' ou 'Join'\n\n"
-        f"*Aplique nas 3 para que sua aprovação seja mais rápida*\n\n"
-        f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu\n\n"
-        f"**Exemplo:** `FANATICOS POR PVE`"
-    )
+#     mensagem_aplicacao = (
+#         f"🏰 **ETAPA 3: APLICAÇÃO NA GUILD**\n\n"
+#         f"`Não temos guild principal todas tem o mesmo nivel de relevância`\n\n"
+#         f"Agora você deve se aplicar nas nossas 3 guildas:\n\n"
+#         f"🔹 **LOUCOS POR PVE** `Cheio` \n"
+#         f"🔹 **INSANOS POR PVE** `Cheio` \n"
+#         f"🔹 **FANATICOS POR PVE** `Nova vazio - chance maior` \n\n"
+#         f"📋 **Como fazer:**\n"
+#         f"• Abra o Albion Online\n"
+#         f"• Vá no menu de Guilds\n"
+#         f"• Procure por uma das guilds acima\n"
+#         f"• Clique em 'Aplicar' ou 'Join'\n\n"
+#         f"*Aplique nas 3 para que sua aprovação seja mais rápida*\n\n"
+#         f"⚠️ **Após se aplicar, escreva o nome da guild que você escolheu\n\n"
+#         f"**Exemplo:** `FANATICOS POR PVE`"
+#     )
 
     
-    # Enviar mensagem principal primeiro
-    await channel.send(mensagem_aplicacao)
+#     # Enviar mensagem principal primeiro
+#     await channel.send(mensagem_aplicacao)
     
-    # Enviar o GIF tutorial se ele existir
-    if os.path.exists(gif_tutorial):
-        try:
-            # Criar embed para o GIF
-            embed_gif = discord.Embed(
-                title="🎮 Tutorial: Como se aplicar na Guild",
-                description="Siga os passos mostrados no GIF abaixo para se aplicar em uma das nossas guilds",
-                color=0x00ff00
-            )
+#     # Enviar o GIF tutorial se ele existir
+#     if os.path.exists(gif_tutorial):
+#         try:
+#             # Criar embed para o GIF
+#             embed_gif = discord.Embed(
+#                 title="🎮 Tutorial: Como se aplicar na Guild",
+#                 description="Siga os passos mostrados no GIF abaixo para se aplicar em uma das nossas guilds",
+#                 color=0x00ff00
+#             )
             
-            # Anexar o GIF
-            file_gif = discord.File(gif_tutorial, filename=gif_tutorial)
-            embed_gif.set_image(url=f"attachment://{gif_tutorial}")
+#             # Anexar o GIF
+#             file_gif = discord.File(gif_tutorial, filename=gif_tutorial)
+#             embed_gif.set_image(url=f"attachment://{gif_tutorial}")
             
-            await channel.send(embed=embed_gif, file=file_gif)
-            print(f"[TUTORIAL] GIF de aplicação enviado: {gif_tutorial}")
+#             await channel.send(embed=embed_gif, file=file_gif)
+#             print(f"[TUTORIAL] GIF de aplicação enviado: {gif_tutorial}")
             
-        except Exception as e:
-            print(f"[TUTORIAL] Erro ao enviar GIF: {e}")
-            await channel.send("*(GIF tutorial não disponível no momento)*")
-    else:
-        await channel.send("*(GIF tutorial não encontrado - verifique se o arquivo está na pasta raiz)*")
+#         except Exception as e:
+#             print(f"[TUTORIAL] Erro ao enviar GIF: {e}")
+#             await channel.send("*(GIF tutorial não disponível no momento)*")
+#     else:
+#         await channel.send("*(GIF tutorial não encontrado - verifique se o arquivo está na pasta raiz)*")
     
-    tickets_recrutamento[channel.id]["etapa"] = "aguardando_aplicacao"
+#     tickets_recrutamento[channel.id]["etapa"] = "aguardando_aplicacao"
 
-async def processar_aplicacao_feita(channel, user):
-    """Processa quando a aplicação foi feita"""
+# async def processar_aplicacao_feita(channel, user):
+#     """Processa quando a aplicação foi feita"""
     
-    await channel.send(
-        f"✅ **Aplicação confirmada!**\n\n"
-    )
+#     await channel.send(
+#         f"✅ **Aplicação confirmada!**\n\n"
+#     )
     
-    await asyncio.sleep(2)
-    await notificar_recrutadores(channel, user)
+#     await asyncio.sleep(2)
+#     await notificar_recrutadores(channel, user)
 
-async def notificar_recrutadores(channel, user):
-    """Notifica recrutadores sobre o novo candidato"""
+# async def notificar_recrutadores(channel, user):
+#     """Notifica recrutadores sobre o novo candidato"""
     
-    guild = channel.guild
-    recrutadores = []
+#     guild = channel.guild
+#     recrutadores = []
     
-    # Buscar membros com role "Recrutador"
-    for member in guild.members:
-        if any("recrutador" in role.name.lower() for role in member.roles):
-            recrutadores.append(member)
+#     # Buscar membros com role "Recrutador"
+#     for member in guild.members:
+#         if any("recrutador" in role.name.lower() for role in member.roles):
+#             recrutadores.append(member)
     
-    if recrutadores:
-        mensagem_notificacao = (
-            f"**-------------------------------------------------------------------------**\n"
-            f"**RECRUTADOR**\n"
-            f"**-------------------------------------------------------------------------**\n\n"
-            f"🔔 **NOVO CANDIDATO PRONTO PARA APROVAÇÃO!**\n\n"
-            f"Ticket: {channel.mention}\n"
-            f"Candidato: {user.mention}\n\n"
-            f"✅ O candidato já completou todas as etapas do processo e está aguardando aprovação na guild.\n\n"
-            f"📋 **Próximos passos:**\n"
-            f"• Revisar aplicação na guild dentro do jogo\n"
-            f"• Aprovar o candidato\n"
-            f"• Após aprovação, escrever `PRONTO` no ticket"
-        )
+#     if recrutadores:
+#         mensagem_notificacao = (
+#             f"**-------------------------------------------------------------------------**\n"
+#             f"**RECRUTADOR**\n"
+#             f"**-------------------------------------------------------------------------**\n\n"
+#             f"🔔 **NOVO CANDIDATO PRONTO PARA APROVAÇÃO!**\n\n"
+#             f"Ticket: {channel.mention}\n"
+#             f"Candidato: {user.mention}\n\n"
+#             f"✅ O candidato já completou todas as etapas do processo e está aguardando aprovação na guild.\n\n"
+#             f"📋 **Próximos passos:**\n"
+#             f"• Revisar aplicação na guild dentro do jogo\n"
+#             f"• Aprovar o candidato\n"
+#             f"• Após aprovação, escrever `PRONTO` no ticket"
+#         )
         
-        # Enviar DM para cada recrutador
-        for recrutador in recrutadores:
-            try:
-                await recrutador.send(mensagem_notificacao)
-                print(f"[RECRUTAMENTO] DM enviado para recrutador: {recrutador.display_name}")
-            except discord.Forbidden:
-                print(f"[RECRUTAMENTO] Não foi possível enviar DM para: {recrutador.display_name}")
+#         # Enviar DM para cada recrutador
+#         for recrutador in recrutadores:
+#             try:
+#                 await recrutador.send(mensagem_notificacao)
+#                 print(f"[RECRUTAMENTO] DM enviado para recrutador: {recrutador.display_name}")
+#             except discord.Forbidden:
+#                 print(f"[RECRUTAMENTO] Não foi possível enviar DM para: {recrutador.display_name}")
         
-        # Também postar no canal do ticket
-        await channel.send(
-            f"📢 **RECRUTADORES NOTIFICADOS!**\n\n"
-            f"Nossos recrutadores foram notificados sobre sua aplicação.\n"
-            f"Aguarde a aprovação dentro do jogo.\n\n"
-            f"⏳ **Recrutador, por favor, escreva** `PRONTO` **para que o novo membro possa ver o tutorial final!**"
-        )
-    else:
-        await channel.send(
-            f"❌ **Erro:** Não foi possível encontrar recrutadores online.\n"
-            f"Por favor, aguarde ou contate um administrador."
-        )
+#         # Também postar no canal do ticket
+#         await channel.send(
+#             f"📢 **RECRUTADORES NOTIFICADOS!**\n\n"
+#             f"Nossos recrutadores foram notificados sobre sua aplicação.\n"
+#             f"Aguarde a aprovação dentro do jogo.\n\n"
+#             f"⏳ **Recrutador, por favor, escreva** `PRONTO` **para que o novo membro possa ver o tutorial final!**"
+#         )
+#     else:
+#         await channel.send(
+#             f"❌ **Erro:** Não foi possível encontrar recrutadores online.\n"
+#             f"Por favor, aguarde ou contate um administrador."
+#         )
     
-    tickets_recrutamento[channel.id]["etapa"] = "aguardando_recrutador"
+#     tickets_recrutamento[channel.id]["etapa"] = "aguardando_recrutador"
 
-async def processar_tutorial_final(channel, user):
-    """Mostra o tutorial final para o novo membro"""
+# async def processar_tutorial_final(channel, user):
+#     """Mostra o tutorial final para o novo membro"""
     
-    # Nome da imagem na pasta raiz
-    img_tutorial = "tutorial_mostrar_canais.png"  # ou o nome que sua imagem tem
+#     # Nome da imagem na pasta raiz
+#     img_tutorial = "tutorial_mostrar_canais.png"  # ou o nome que sua imagem tem
     
-    # Primeira parte da mensagem
-    tutorial_inicial = (
-        f"🎉 **PARABÉNS! VOCÊ FOI ACEITO NA GUILD!**\n\n"
-        f"*Para que não tenha nenhum problema com os canais do discord, recomendamos que vá até as configurações do servidor*\n"
-        f"*e habilite* `mostrar todos os canais` como na imagem a seguir:\n"
-    )
+#     # Primeira parte da mensagem
+#     tutorial_inicial = (
+#         f"🎉 **PARABÉNS! VOCÊ FOI ACEITO NA GUILD!**\n\n"
+#         f"*Para que não tenha nenhum problema com os canais do discord, recomendamos que vá até as configurações do servidor*\n"
+#         f"*e habilite* `mostrar todos os canais` como na imagem a seguir:\n"
+#     )
     
-    await channel.send(tutorial_inicial)
+#     await channel.send(tutorial_inicial)
     
-    # Enviar a imagem se ela existir
-    if os.path.exists(img_tutorial):
-        try:
-            file_tutorial = discord.File(img_tutorial, filename=img_tutorial)
-            embed_img = discord.Embed(
-                title="📋 Tutorial: Como mostrar todos os canais",
-                description="Siga os passos mostrados na imagem acima",
-                color=0x00ff00
-            )
-            embed_img.set_image(url=f"attachment://{img_tutorial}")
-            await channel.send(embed=embed_img, file=file_tutorial)
-        except Exception as e:
-            print(f"[TUTORIAL] Erro ao enviar imagem: {e}")
-            await channel.send("*(Imagem de tutorial não disponível)*")
-    else:
-        await channel.send("*(Imagem de tutorial não encontrada)*")
+#     # Enviar a imagem se ela existir
+#     if os.path.exists(img_tutorial):
+#         try:
+#             file_tutorial = discord.File(img_tutorial, filename=img_tutorial)
+#             embed_img = discord.Embed(
+#                 title="📋 Tutorial: Como mostrar todos os canais",
+#                 description="Siga os passos mostrados na imagem acima",
+#                 color=0x00ff00
+#             )
+#             embed_img.set_image(url=f"attachment://{img_tutorial}")
+#             await channel.send(embed=embed_img, file=file_tutorial)
+#         except Exception as e:
+#             print(f"[TUTORIAL] Erro ao enviar imagem: {e}")
+#             await channel.send("*(Imagem de tutorial não disponível)*")
+#     else:
+#         await channel.send("*(Imagem de tutorial não encontrada)*")
     
-    # Segunda parte da mensagem
-    tutorial_final = (
-        f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
-        f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
-        f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
-        f"🔹 **Digite o comando:** `/registro`\n"
-        f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
-        f"📋 **Exemplo:**\n"
-        f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
-        f"✅ **Após o registro você terá acesso a:**\n"
-        f"• Canais exclusivos da guild\n"
-        f"• Sistema de pontuação\n"
-        f"• DGs beneficentes\n"
-        f"• Eventos e sorteios\n\n"
-        f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
-        f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
-    )
+#     # Segunda parte da mensagem
+#     tutorial_final = (
+#         f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
+#         f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
+#         f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
+#         f"🔹 **Digite o comando:** `/registro`\n"
+#         f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
+#         f"📋 **Exemplo:**\n"
+#         f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
+#         f"✅ **Após o registro você terá acesso a:**\n"
+#         f"• Canais exclusivos da guild\n"
+#         f"• Sistema de pontuação\n"
+#         f"• DGs beneficentes\n"
+#         f"• Eventos e sorteios\n\n"
+#         f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
+#         f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
+#     )
     
-    await channel.send(tutorial_final)
+#     await channel.send(tutorial_final)
     
-    # Limpar dados do ticket
-    if channel.id in tickets_recrutamento:
-        del tickets_recrutamento[channel.id]
+#     # Limpar dados do ticket
+#     if channel.id in tickets_recrutamento:
+#         del tickets_recrutamento[channel.id]
     
-    print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
-
-
-async def processar_problema_com_registro(channel, user):
+#     print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
 
 
-    tutorial_final = (
-        f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
-        f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
-        f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
-        f"🔹 **Digite o comando:** `/registro`\n"
-        f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
-        f"📋 **Exemplo:**\n"
-        f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
-        f"✅ **Após o registro você terá acesso a:**\n"
-        f"• Canais exclusivos da guild\n"
-        f"• Sistema de pontuação\n"
-        f"• DGs beneficentes\n"
-        f"• Eventos e sorteios\n\n"
-        f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
-        f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
-    )
+# async def processar_problema_com_registro(channel, user):
+
+
+#     tutorial_final = (
+#         f"\nBem-vindo(a) oficialmente à família **LOUCOS POR PVE**! {user.mention}\n\n"
+#         f"📚 **TUTORIAL FINAL - REGISTRO NO DISCORD:**\n\n"
+#         f"Para completar seu processo, você deve se registrar no nosso sistema:\n\n"
+#         f"🔹 **Digite o comando:** `/registro`\n"
+#         f"🔹 **Quando solicitado, digite seu nickname do jogo Albion Online**\n\n"
+#         f"📋 **Exemplo:**\n"
+#         f"`/registro` → Digite: `SeuNickDoJogo`\n\n"
+#         f"✅ **Após o registro você terá acesso a:**\n"
+#         f"• Canais exclusivos da guild\n"
+#         f"• Sistema de pontuação\n"
+#         f"• DGs beneficentes\n"
+#         f"• Eventos e sorteios\n\n"
+#         f"🎊 **Mais uma vez, seja muito bem-vindo(a)!**\n"
+#         f"Se tiver dúvidas, pode perguntar aqui mesmo ou nos canais da guild."
+#     )
     
-    await channel.send(tutorial_final)
+#     await channel.send(tutorial_final)
     
-    # Limpar dados do ticket
-    if channel.id in tickets_recrutamento:
-        del tickets_recrutamento[channel.id]
+#     # Limpar dados do ticket
+#     if channel.id in tickets_recrutamento:
+#         del tickets_recrutamento[channel.id]
     
-    print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
+#     print(f"[RECRUTAMENTO] Processo finalizado para {channel.name}")
 
 # ;
 # ;
@@ -2685,7 +2681,7 @@ pedidos_pontos_pendentes = {}
 async def registrar_pontos(interaction: discord.Interaction, integrantes: str, pontos: int):
     
 
-    if await permitir_comando_apenas_no_canal(interaction, "📊・solicitar-pontos"):
+    if await permitir_comando_apenas_no_canal(interaction, "💎・solicitar-pontos-cristal"):
         return
 
     await safe_defer(interaction)
